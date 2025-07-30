@@ -14,7 +14,383 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      bot_config: {
+        Row: {
+          capital_cad: number
+          created_at: string
+          daily_stop_loss: number
+          id: string
+          is_active: boolean
+          max_positions: number
+          mode: string
+          notification_enabled: boolean
+          retraining_frequency: string
+          risk_per_trade: number
+          symbols: string[]
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          capital_cad?: number
+          created_at?: string
+          daily_stop_loss?: number
+          id?: string
+          is_active?: boolean
+          max_positions?: number
+          mode?: string
+          notification_enabled?: boolean
+          retraining_frequency?: string
+          risk_per_trade?: number
+          symbols?: string[]
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          capital_cad?: number
+          created_at?: string
+          daily_stop_loss?: number
+          id?: string
+          is_active?: boolean
+          max_positions?: number
+          mode?: string
+          notification_enabled?: boolean
+          retraining_frequency?: string
+          risk_per_trade?: number
+          symbols?: string[]
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      daily_pnl: {
+        Row: {
+          created_at: string
+          date: string
+          ending_balance: number
+          id: string
+          losing_trades: number
+          max_drawdown: number
+          realized_pnl: number
+          risk_used: number
+          starting_balance: number
+          total_pnl: number
+          total_trades: number
+          unrealized_pnl: number
+          user_id: string
+          win_rate: number
+          winning_trades: number
+        }
+        Insert: {
+          created_at?: string
+          date: string
+          ending_balance: number
+          id?: string
+          losing_trades: number
+          max_drawdown: number
+          realized_pnl: number
+          risk_used: number
+          starting_balance: number
+          total_pnl: number
+          total_trades: number
+          unrealized_pnl: number
+          user_id: string
+          win_rate: number
+          winning_trades: number
+        }
+        Update: {
+          created_at?: string
+          date?: string
+          ending_balance?: number
+          id?: string
+          losing_trades?: number
+          max_drawdown?: number
+          realized_pnl?: number
+          risk_used?: number
+          starting_balance?: number
+          total_pnl?: number
+          total_trades?: number
+          unrealized_pnl?: number
+          user_id?: string
+          win_rate?: number
+          winning_trades?: number
+        }
+        Relationships: []
+      }
+      executed_trades: {
+        Row: {
+          created_at: string
+          fee: number
+          id: string
+          kraken_order_id: string | null
+          position_id: string | null
+          price: number
+          quantity: number
+          realized_pnl: number | null
+          side: string
+          symbol: string
+          timestamp: string
+          trade_type: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          fee: number
+          id?: string
+          kraken_order_id?: string | null
+          position_id?: string | null
+          price: number
+          quantity: number
+          realized_pnl?: number | null
+          side: string
+          symbol: string
+          timestamp: string
+          trade_type: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          fee?: number
+          id?: string
+          kraken_order_id?: string | null
+          position_id?: string | null
+          price?: number
+          quantity?: number
+          realized_pnl?: number | null
+          side?: string
+          symbol?: string
+          timestamp?: string
+          trade_type?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "executed_trades_position_id_fkey"
+            columns: ["position_id"]
+            isOneToOne: false
+            referencedRelation: "trading_positions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      market_data: {
+        Row: {
+          close: number
+          created_at: string
+          high: number
+          id: string
+          low: number
+          open: number
+          symbol: string
+          timeframe: string
+          timestamp: string
+          volume: number
+        }
+        Insert: {
+          close: number
+          created_at?: string
+          high: number
+          id?: string
+          low: number
+          open: number
+          symbol: string
+          timeframe: string
+          timestamp: string
+          volume: number
+        }
+        Update: {
+          close?: number
+          created_at?: string
+          high?: number
+          id?: string
+          low?: number
+          open?: number
+          symbol?: string
+          timeframe?: string
+          timestamp?: string
+          volume?: number
+        }
+        Relationships: []
+      }
+      market_regimes: {
+        Row: {
+          confidence: number
+          created_at: string
+          id: string
+          regime: string
+          symbol: string
+          timestamp: string
+          trend_strength: number
+          volatility: number
+        }
+        Insert: {
+          confidence: number
+          created_at?: string
+          id?: string
+          regime: string
+          symbol: string
+          timestamp: string
+          trend_strength: number
+          volatility: number
+        }
+        Update: {
+          confidence?: number
+          created_at?: string
+          id?: string
+          regime?: string
+          symbol?: string
+          timestamp?: string
+          trend_strength?: number
+          volatility?: number
+        }
+        Relationships: []
+      }
+      ml_models: {
+        Row: {
+          accuracy: number | null
+          created_at: string
+          f1_score: number | null
+          feature_importance: Json | null
+          id: string
+          is_active: boolean
+          model_params: Json | null
+          model_type: string
+          precision_score: number | null
+          recall_score: number | null
+          symbol: string
+          trained_at: string
+          training_data_size: number | null
+          version: number
+        }
+        Insert: {
+          accuracy?: number | null
+          created_at?: string
+          f1_score?: number | null
+          feature_importance?: Json | null
+          id?: string
+          is_active?: boolean
+          model_params?: Json | null
+          model_type: string
+          precision_score?: number | null
+          recall_score?: number | null
+          symbol: string
+          trained_at?: string
+          training_data_size?: number | null
+          version: number
+        }
+        Update: {
+          accuracy?: number | null
+          created_at?: string
+          f1_score?: number | null
+          feature_importance?: Json | null
+          id?: string
+          is_active?: boolean
+          model_params?: Json | null
+          model_type?: string
+          precision_score?: number | null
+          recall_score?: number | null
+          symbol?: string
+          trained_at?: string
+          training_data_size?: number | null
+          version?: number
+        }
+        Relationships: []
+      }
+      strategy_signals: {
+        Row: {
+          confidence: number
+          created_at: string
+          id: string
+          indicators: Json | null
+          ml_score: number | null
+          price: number
+          signal_type: string
+          strategy_type: string
+          symbol: string
+          timestamp: string
+        }
+        Insert: {
+          confidence: number
+          created_at?: string
+          id?: string
+          indicators?: Json | null
+          ml_score?: number | null
+          price: number
+          signal_type: string
+          strategy_type: string
+          symbol: string
+          timestamp: string
+        }
+        Update: {
+          confidence?: number
+          created_at?: string
+          id?: string
+          indicators?: Json | null
+          ml_score?: number | null
+          price?: number
+          signal_type?: string
+          strategy_type?: string
+          symbol?: string
+          timestamp?: string
+        }
+        Relationships: []
+      }
+      trading_positions: {
+        Row: {
+          closed_at: string | null
+          created_at: string
+          current_price: number | null
+          entry_price: number
+          id: string
+          opened_at: string
+          quantity: number
+          risk_amount: number
+          side: string
+          status: string
+          stop_loss: number | null
+          strategy_used: string
+          symbol: string
+          take_profit: number | null
+          unrealized_pnl: number | null
+          user_id: string
+        }
+        Insert: {
+          closed_at?: string | null
+          created_at?: string
+          current_price?: number | null
+          entry_price: number
+          id?: string
+          opened_at?: string
+          quantity: number
+          risk_amount: number
+          side: string
+          status?: string
+          stop_loss?: number | null
+          strategy_used: string
+          symbol: string
+          take_profit?: number | null
+          unrealized_pnl?: number | null
+          user_id: string
+        }
+        Update: {
+          closed_at?: string | null
+          created_at?: string
+          current_price?: number | null
+          entry_price?: number
+          id?: string
+          opened_at?: string
+          quantity?: number
+          risk_amount?: number
+          side?: string
+          status?: string
+          stop_loss?: number | null
+          strategy_used?: string
+          symbol?: string
+          take_profit?: number | null
+          unrealized_pnl?: number | null
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
