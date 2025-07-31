@@ -1,1 +1,7 @@
 project_id = "asxcbnkpflgecqreegdd"
+
+[functions.trading-bot]
+verify_jwt = false
+
+[functions.daily-retraining]
+verify_jwt = false
