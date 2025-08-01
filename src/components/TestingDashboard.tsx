@@ -19,6 +19,14 @@ import {
   Activity
 } from 'lucide-react';
 
+// Modal imports
+import { DetailedLogsModal } from '@/components/modals/DetailedLogsModal';
+import { ParameterAdjustmentModal } from '@/components/modals/ParameterAdjustmentModal';
+import { PerformanceReportModal } from '@/components/modals/PerformanceReportModal';
+import { EmergencyStopModal } from '@/components/modals/EmergencyStopModal';
+import { OptimizationLogModal } from '@/components/modals/OptimizationLogModal';
+import { ProceedToLiveModal } from '@/components/modals/ProceedToLiveModal';
+
 interface BacktestResult {
   period: string;
   totalTrades: number;
@@ -56,6 +64,7 @@ export const TestingDashboard = () => {
   const [performanceReportOpen, setPerformanceReportOpen] = useState(false);
   const [emergencyStopOpen, setEmergencyStopOpen] = useState(false);
   const [optimizationLogOpen, setOptimizationLogOpen] = useState(false);
+  const [proceedToLiveOpen, setProceedToLiveOpen] = useState(false);
   const [backtestResults] = useState<BacktestResult[]>([
     {
       period: '6 Months',
@@ -270,7 +279,7 @@ export const TestingDashboard = () => {
                     <Target className="w-4 h-4 mr-2" />
                     Adjust Parameters
                   </Button>
-                  <Button onClick={() => alert('Proceeding to live testing phase with $100 CAD account - all safety measures activated')}>
+                  <Button onClick={() => setProceedToLiveOpen(true)}>
                     Proceed to Live Testing
                   </Button>
                 </div>
@@ -424,6 +433,7 @@ export const TestingDashboard = () => {
       <PerformanceReportModal open={performanceReportOpen} onOpenChange={setPerformanceReportOpen} />
       <EmergencyStopModal open={emergencyStopOpen} onOpenChange={setEmergencyStopOpen} />
       <OptimizationLogModal open={optimizationLogOpen} onOpenChange={setOptimizationLogOpen} />
+      <ProceedToLiveModal open={proceedToLiveOpen} onOpenChange={setProceedToLiveOpen} />
     </div>
   );
 };

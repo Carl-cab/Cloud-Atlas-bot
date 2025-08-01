@@ -18,6 +18,10 @@ import {
   AlertCircle
 } from 'lucide-react';
 
+// Modal imports
+import { ParameterAdjustmentModal } from '@/components/modals/ParameterAdjustmentModal';
+import { BacktestModal } from '@/components/modals/BacktestModal';
+
 interface TradingEngine {
   name: string;
   type: 'trend_following' | 'mean_reversion';
