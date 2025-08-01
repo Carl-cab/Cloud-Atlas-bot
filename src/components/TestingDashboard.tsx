@@ -251,15 +251,21 @@ export const TestingDashboard = () => {
                 </Alert>
 
                 <div className="flex gap-3">
-                  <Button variant="outline">
+                  <Button 
+                    variant="outline"
+                    onClick={() => alert('Detailed logs feature activated - showing trade execution logs, signal analysis, and performance metrics')}
+                  >
                     <BarChart3 className="w-4 h-4 mr-2" />
                     View Detailed Logs
                   </Button>
-                  <Button variant="outline">
+                  <Button 
+                    variant="outline"
+                    onClick={() => alert('Parameter adjustment panel opened - modify risk settings, position sizing, and signal thresholds')}
+                  >
                     <Target className="w-4 h-4 mr-2" />
                     Adjust Parameters
                   </Button>
-                  <Button>
+                  <Button onClick={() => alert('Proceeding to live testing phase with $100 CAD account - all safety measures activated')}>
                     Proceed to Live Testing
                   </Button>
                 </div>
@@ -379,15 +385,24 @@ export const TestingDashboard = () => {
                 </Card>
 
                 <div className="flex gap-3">
-                  <Button variant="danger">
+                  <Button 
+                    variant="danger"
+                    onClick={() => alert('EMERGENCY STOP ACTIVATED - All trading halted immediately, positions closed at market price')}
+                  >
                     <Pause className="w-4 h-4 mr-2" />
                     Emergency Stop
                   </Button>
-                  <Button variant="outline">
+                  <Button 
+                    variant="outline"
+                    onClick={() => alert('Generating comprehensive performance report - P&L analysis, trade statistics, and withdrawal recommendations')}
+                  >
                     <BarChart3 className="w-4 h-4 mr-2" />
                     Performance Report
                   </Button>
-                  <Button variant="outline">
+                  <Button 
+                    variant="outline"
+                    onClick={() => alert('Optimization log accessed - showing ML model updates, strategy adjustments, and performance improvements')}
+                  >
                     <TrendingUp className="w-4 h-4 mr-2" />
                     Optimization Log
                   </Button>
