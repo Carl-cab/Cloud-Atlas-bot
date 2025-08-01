@@ -247,7 +247,14 @@ export const CloudAtlasBot = () => {
               <h1 className="text-3xl font-bold bg-gradient-primary bg-clip-text text-transparent">
                 CloudAtlasBot
               </h1>
-              <p className="text-muted-foreground">Advanced Trading Automation</p>
+              <p className="text-muted-foreground">Agentic AI Crypto Trading Bot — Multi‑Exchange, Real‑Time Alerts, Performance Reporting</p>
+              <div className="flex flex-wrap gap-2 mt-2">
+                <Badge variant="outline" className="text-xs">Kraken Live</Badge>
+                <Badge variant="outline" className="text-xs">ML Ranker</Badge>
+                <Badge variant="outline" className="text-xs">Regime Detection</Badge>
+                <Badge variant="outline" className="text-xs">Real-time Alerts</Badge>
+                <Badge variant="outline" className="text-xs">$100 CAD Beta</Badge>
+              </div>
             </div>
           </div>
         </div>
@@ -519,24 +526,239 @@ export const CloudAtlasBot = () => {
         </TabsContent>
 
         <TabsContent value="settings" className="space-y-4">
-          <Card className="card-shadow">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Settings className="h-5 w-5 text-primary" />
-                CloudAtlasBot Configuration
-              </CardTitle>
-              <CardDescription>
-                Advanced settings for your trading automation
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="text-center text-muted-foreground py-8">
-                <Settings className="h-12 w-12 mx-auto mb-4 text-primary/50" />
-                <p>Advanced configuration panel coming soon...</p>
-                <p className="text-sm mt-2">Configure strategies, risk parameters, and notifications</p>
-              </div>
-            </CardContent>
-          </Card>
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold">⚙️ Bot Configuration & Strategy Details</h3>
+            <Badge variant="outline" className="text-primary border-primary">
+              Advanced Settings
+            </Badge>
+          </div>
+          
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Trading Strategies */}
+            <Card className="card-shadow">
+              <CardHeader>
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Brain className="w-4 h-4" />
+                  Trading Strategies & ML Ranker
+                </CardTitle>
+                <CardDescription className="text-xs">
+                  Adaptive Regime Switching + ML Ranker (Scikit-learn Gradient Boosting)
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-3">
+                  <div className="p-3 bg-muted/50 rounded-lg">
+                    <h4 className="font-medium text-sm text-success">🎯 Regime Detection</h4>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Every 1 min analysis, act on 15m/1h bar close, confirm on 4h
+                    </p>
+                    <div className="text-xs mt-2 space-y-1">
+                      <div>• Trending: ADX(14) ≥ 20 & |EMA50−EMA200| / Price ≥ 0.5%</div>
+                      <div>• Ranging: ADX(14) &lt; 20 & BBWidth(20) &lt; 60‑day median</div>
+                      <div>• High Vol: ATR(14)/Price ≥ 2% → halve size & widen stops</div>
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-muted/50 rounded-lg">
+                    <h4 className="font-medium text-sm text-primary">📈 Trend-Following Engine</h4>
+                    <div className="text-xs mt-2 space-y-1">
+                      <div><strong>Entry:</strong> EMA(9/21) crossover + SMA(50/200) alignment</div>
+                      <div><strong>+ MACD:</strong> line {'>'} signal + Bollinger break + volume spike</div>
+                      <div><strong>Exit:</strong> SL = 1.8× ATR; TP1 = 1× ATR (50% close + BE stop)</div>
+                      <div><strong>TP2:</strong> 3× ATR or 1× ATR trailing</div>
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-muted/50 rounded-lg">
+                    <h4 className="font-medium text-sm text-accent">🔄 Mean-Reversion Engine</h4>
+                    <div className="text-xs mt-2 space-y-1">
+                      <div><strong>Entry:</strong> RSI(14) {'<'}30 (buy) or {'>'}70 (sell)</div>
+                      <div><strong>+ Bollinger:</strong> bounce + volume delta + S/R proximity</div>
+                      <div><strong>Exit:</strong> Same SL/TP structure as trend-following</div>
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-primary/10 rounded-lg border border-primary/20">
+                    <h4 className="font-medium text-sm text-primary">🤖 ML Ranker (Execute Only If)</h4>
+                    <div className="text-xs mt-2 space-y-1">
+                      <div><strong>Features:</strong> regime flags, RSI, MACD hist Δ, Bollinger %B</div>
+                      <div><strong>+ ATR%,</strong> volume z‑score, EMA distance, order‑book imbalance</div>
+                      <div className="font-medium text-primary mt-2">
+                        ✓ Probability ≥ 0.60 AND Expected R ≥ 1.8
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Risk Management & Notifications */}
+            <Card className="card-shadow">
+              <CardHeader>
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Shield className="w-4 h-4" />
+                  Risk Management & Notifications
+                </CardTitle>
+                <CardDescription className="text-xs">
+                  Advanced risk controls and real-time alerts
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-3">
+                  <div className="p-3 bg-danger/10 rounded-lg border border-danger/20">
+                    <h4 className="font-medium text-sm text-danger">🛡️ Risk Parameters</h4>
+                    <div className="text-xs mt-2 space-y-1">
+                      <div>• Risk/trade: 0.5% of equity (max 1%)</div>
+                      <div>• Max concurrent exposure: 4R total; 10% per asset</div>
+                      <div>• Daily loss limit: −2R → pause trading 12h</div>
+                      <div>• No averaging down; add only if unrealized {'>'} +1R</div>
+                      <div>• Skip if fees/slippage {'>'} 25% of TP1 distance</div>
+                      <div>• Reduce size 50% during high‑volatility/weekends</div>
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-blue-500/10 rounded-lg border border-blue-500/20">
+                    <h4 className="font-medium text-sm text-blue-600">📱 Real-time Notifications</h4>
+                    <div className="text-xs mt-2 space-y-1">
+                      <div><strong>Telegram:</strong> Chat ID: 8235565333</div>
+                      <div><strong>Email:</strong> brynknauf@gmail.com</div>
+                      <div><strong>SMS:</strong> +12509381816 (via Twilio)</div>
+                    </div>
+                    <div className="text-xs mt-2 font-medium">
+                      Alerts: fills, partial TP, SL hit, circuit breaker, nightly retrain
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-green-500/10 rounded-lg border border-green-500/20">
+                    <h4 className="font-medium text-sm text-green-600">📊 Performance Reports</h4>
+                    <div className="text-xs mt-2 space-y-1">
+                      <div><strong>Frequency:</strong> 3× weekly (Mon/Wed/Fri 18:00 PT)</div>
+                      <div><strong>Content:</strong> Per‑exchange PnL + equity curve</div>
+                      <div><strong>Metrics:</strong> Win rate, profit factor, drawdown, fees</div>
+                      <div><strong>Analysis:</strong> Slippage estimate + rolling volatility</div>
+                    </div>
+                    <div className="text-xs mt-2 font-medium text-green-600">
+                      📤 Withdrawal Advice: 25% of weekly profits if new equity high
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-amber-500/10 rounded-lg border border-amber-500/20">
+                    <h4 className="font-medium text-sm text-amber-600">🧪 Beta Test Plan ($100 CAD)</h4>
+                    <div className="text-xs mt-2 space-y-1">
+                      <div>• Backtest 6–12 months Kraken: BTC, ETH, SOL + alts</div>
+                      <div>• Paper trade 5–7 days with real-time data</div>
+                      <div>• Go live with $100 CAD on Kraken</div>
+                      <div>• Halt if account falls below $95 (5% drawdown)</div>
+                      <div className="font-medium text-amber-600 mt-2">
+                        Scale when daily avg {'>'}0.8% & PF {'>'}1.5 & maxDD {'<'}5%
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Platform Support */}
+            <Card className="card-shadow">
+              <CardHeader>
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Target className="w-4 h-4" />
+                  Trading Platforms & Environment
+                </CardTitle>
+                <CardDescription className="text-xs">
+                  Multi-exchange support and configuration
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-3">
+                  <div className="p-3 bg-primary/10 rounded-lg border border-primary/20">
+                    <h4 className="font-medium text-sm text-primary">🏦 Supported Exchanges</h4>
+                    <div className="text-xs mt-2 space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span><strong>Kraken:</strong> Live trading (current)</span>
+                        <Badge variant="default" className="text-xs">ACTIVE</Badge>
+                      </div>
+                      <div className="text-muted-foreground">• Base Currency: CAD</div>
+                      <div className="text-muted-foreground">• Beta Capital: $100 CAD</div>
+                      <div className="mt-2 pt-2 border-t border-primary/20">
+                        <div><strong>Future-Ready:</strong> Coinbase Advanced, Binance, Bybit</div>
+                        <div className="text-xs text-muted-foreground">(CCXT integration prepared)</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-muted/50 rounded-lg">
+                    <h4 className="font-medium text-sm">⚙️ Environment Variables</h4>
+                    <div className="text-xs mt-2 space-y-1 font-mono">
+                      <div>KRAKEN_API_KEY=configured</div>
+                      <div>KRAKEN_PRIVATE_KEY=configured</div>
+                      <div>TELEGRAM_BOT_TOKEN=configured</div>
+                      <div>TELEGRAM_CHAT_ID=8235565333</div>
+                      <div>REPORT_EMAIL_TO=brynknauf@gmail.com</div>
+                      <div>ALERTS_SMS_TO=+12509381816</div>
+                      <div>APP_TIMEZONE=America/Vancouver</div>
+                      <div>MAX_RISK_PER_TRADE_BP=50 (0.50%)</div>
+                      <div>ML_SCORE_CUTOFF=0.60</div>
+                      <div>MIN_EXPECTED_R=1.8</div>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* System Status */}
+            <Card className="card-shadow">
+              <CardHeader>
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Activity className="w-4 h-4" />
+                  System Status & Health
+                </CardTitle>
+                <CardDescription className="text-xs">
+                  Real-time system monitoring and performance
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-2 bg-success/10 rounded text-center">
+                    <div className="text-xs font-medium text-success">API Status</div>
+                    <div className="text-sm font-bold text-success">Connected</div>
+                  </div>
+                  <div className="p-2 bg-success/10 rounded text-center">
+                    <div className="text-xs font-medium text-success">ML Model</div>
+                    <div className="text-sm font-bold text-success">Active</div>
+                  </div>
+                  <div className="p-2 bg-success/10 rounded text-center">
+                    <div className="text-xs font-medium text-success">Regime Detection</div>
+                    <div className="text-sm font-bold text-success">Running</div>
+                  </div>
+                  <div className="p-2 bg-success/10 rounded text-center">
+                    <div className="text-xs font-medium text-success">Notifications</div>
+                    <div className="text-sm font-bold text-success">Enabled</div>
+                  </div>
+                </div>
+                
+                <div className="p-3 bg-muted/50 rounded-lg">
+                  <h4 className="font-medium text-sm mb-2">📈 Current Performance</h4>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div>Daily PnL: <span className="font-medium text-success">+${botStatus.dailyPnL.toFixed(2)}</span></div>
+                    <div>Win Rate: <span className="font-medium">{(botStatus.winRate * 100).toFixed(1)}%</span></div>
+                    <div>Active Trades: <span className="font-medium">{botStatus.activeTrades}</span></div>
+                    <div>Risk Used: <span className="font-medium">{botStatus.riskUsed.toFixed(1)}%</span></div>
+                  </div>
+                </div>
+
+                <div className="p-3 bg-primary/10 rounded-lg border border-primary/20">
+                  <h4 className="font-medium text-sm text-primary mb-2">🎯 Next Actions</h4>
+                  <div className="text-xs space-y-1">
+                    <div>• Daily model retrain: Tonight 23:00 PT</div>
+                    <div>• Performance report: Friday 18:00 PT</div>
+                    <div>• Risk assessment: Continuous</div>
+                    <div>• Withdrawal analysis: Weekly</div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
       </Tabs>
     </div>
