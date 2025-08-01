@@ -18,7 +18,8 @@ import {
   Target,
   DollarSign,
   Bot,
-  Gauge
+  Gauge,
+  LogOut
 } from 'lucide-react';
 import { PlatformSelector } from './PlatformSelector';
 import { MarketAnalysis } from './MarketAnalysis';
@@ -26,6 +27,7 @@ import { PortfolioOverview } from './PortfolioOverview';
 import { AutoTradingControls } from './AutoTradingControls';
 import { RiskManagement } from './RiskManagement';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 
 interface BotStatus {
@@ -70,6 +72,7 @@ export const CloudAtlasBot = () => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [emergencyStop, setEmergencyStop] = useState(false);
   
+  const { signOut } = useAuth();
   const { toast } = useToast();
 
   useEffect(() => {
@@ -265,6 +268,15 @@ export const CloudAtlasBot = () => {
           >
             <Shield className="w-4 h-4 mr-2" />
             {emergencyStop ? 'EMERGENCY STOP' : 'Emergency'}
+          </Button>
+          
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={signOut}
+          >
+            <LogOut className="w-4 h-4 mr-2" />
+            Sign Out
           </Button>
           
           <Switch
