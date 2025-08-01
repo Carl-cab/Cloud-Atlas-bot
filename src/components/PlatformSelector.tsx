@@ -16,9 +16,12 @@ interface Platform {
 interface PlatformSelectorProps {
   selectedPlatform: string;
   onPlatformChange: (platform: string) => void;
+  onPlatformConnect: (platformId: string) => void;
+  onPlatformDisconnect: (platformId: string) => void;
+  onFeatureClick: (platformId: string, feature: string) => void;
 }
 
-export const PlatformSelector = ({ selectedPlatform, onPlatformChange }: PlatformSelectorProps) => {
+export const PlatformSelector = ({ selectedPlatform, onPlatformChange, onPlatformConnect, onPlatformDisconnect, onFeatureClick }: PlatformSelectorProps) => {
   const [platforms] = useState<Platform[]>([
     {
       id: 'binance',
@@ -113,7 +116,15 @@ export const PlatformSelector = ({ selectedPlatform, onPlatformChange }: Platfor
 
             <div className="flex flex-wrap gap-2 mb-3">
               {platform.features.map((feature) => (
-                <Badge key={feature} variant="outline" className="text-xs">
+                <Badge 
+                  key={feature} 
+                  variant="outline" 
+                  className="text-xs cursor-pointer hover:bg-primary/10 transition-colors"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onFeatureClick(platform.id, feature);
+                  }}
+                >
                   {feature}
                 </Badge>
               ))}
@@ -121,16 +132,53 @@ export const PlatformSelector = ({ selectedPlatform, onPlatformChange }: Platfor
 
             <div className="flex gap-2">
               {platform.status === 'connected' ? (
-                <Button variant="outline" size="sm" className="text-xs">
-                  Configure
-                </Button>
+                <>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="text-xs"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onFeatureClick(platform.id, 'configure');
+                    }}
+                  >
+                    Configure
+                  </Button>
+                  <Button 
+                    variant="destructive" 
+                    size="sm" 
+                    className="text-xs"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onPlatformDisconnect(platform.id);
+                    }}
+                  >
+                    Disconnect
+                  </Button>
+                </>
               ) : (
-                <Button variant="trading" size="sm" className="text-xs">
+                <Button 
+                  variant="trading" 
+                  size="sm" 
+                  className="text-xs"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onPlatformConnect(platform.id);
+                  }}
+                >
                   Connect
                 </Button>
               )}
               
-              <Button variant="ghost" size="sm" className="text-xs">
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="text-xs"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  window.open(`https://${platform.id}.com`, '_blank');
+                }}
+              >
                 <ExternalLink className="w-3 h-3" />
               </Button>
             </div>

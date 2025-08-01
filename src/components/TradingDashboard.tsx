@@ -204,6 +204,9 @@ export const TradingDashboard = () => {
                 <PlatformSelector 
                   selectedPlatform={selectedPlatform}
                   onPlatformChange={setSelectedPlatform}
+                  onPlatformConnect={() => {}}
+                  onPlatformDisconnect={() => {}}
+                  onFeatureClick={() => {}}
                 />
               </div>
               <div className="lg:col-span-2">

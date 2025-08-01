@@ -164,6 +164,35 @@ export const CloudAtlasBot = () => {
     }
   };
 
+  const handlePlatformConnect = async (platformId: string) => {
+    toast({
+      title: 'Connecting to Platform',
+      description: `Establishing connection with ${platformId.toUpperCase()}...`,
+    });
+    // Simulate connection process
+    setTimeout(() => {
+      toast({
+        title: 'Platform Connected',
+        description: `Successfully connected to ${platformId.toUpperCase()}`,
+      });
+    }, 2000);
+  };
+
+  const handlePlatformDisconnect = async (platformId: string) => {
+    toast({
+      title: 'Platform Disconnected',
+      description: `Disconnected from ${platformId.toUpperCase()}`,
+      variant: 'destructive'
+    });
+  };
+
+  const handleFeatureClick = (platformId: string, feature: string) => {
+    toast({
+      title: `${feature} Feature`,
+      description: `Opening ${feature} for ${platformId.toUpperCase()}...`,
+    });
+  };
+
   const analyzeMarket = async () => {
     setIsAnalyzing(true);
     try {
@@ -426,6 +455,9 @@ export const CloudAtlasBot = () => {
           <PlatformSelector 
             selectedPlatform={botStatus.selectedPlatform}
             onPlatformChange={(platform) => setBotStatus(prev => ({ ...prev, selectedPlatform: platform }))}
+            onPlatformConnect={handlePlatformConnect}
+            onPlatformDisconnect={handlePlatformDisconnect}
+            onFeatureClick={handleFeatureClick}
           />
         </TabsContent>
 
