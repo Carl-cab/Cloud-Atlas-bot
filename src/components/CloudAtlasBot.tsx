@@ -26,6 +26,9 @@ import { MarketAnalysis } from './MarketAnalysis';
 import { PortfolioOverview } from './PortfolioOverview';
 import { AutoTradingControls } from './AutoTradingControls';
 import { RiskManagement } from './RiskManagement';
+import { RegimeDetectionSystem } from './RegimeDetectionSystem';
+import { TradingEngines } from './TradingEngines';
+import { TestingDashboard } from './TestingDashboard';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
@@ -443,18 +446,24 @@ export const CloudAtlasBot = () => {
 
       {/* Main Dashboard Tabs */}
       <Tabs defaultValue="platform" className="w-full">
-        <TabsList className="grid w-full grid-cols-6 bg-card/50 backdrop-blur-sm">
+        <TabsList className="grid w-full grid-cols-8 bg-card/50 backdrop-blur-sm text-xs lg:text-sm">
           <TabsTrigger value="platform" className="data-[state=active]:bg-gradient-primary">
             🏦 Platform
           </TabsTrigger>
-          <TabsTrigger value="analysis" className="data-[state=active]:bg-gradient-primary">
-            🧠 AI Analysis
+          <TabsTrigger value="testing" className="data-[state=active]:bg-gradient-primary">
+            🧪 Testing
           </TabsTrigger>
-          <TabsTrigger value="trading" className="data-[state=active]:bg-gradient-primary">
-            ⚙️ Trading
+          <TabsTrigger value="regime" className="data-[state=active]:bg-gradient-primary">
+            📊 Regime
+          </TabsTrigger>
+          <TabsTrigger value="engines" className="data-[state=active]:bg-gradient-primary">
+            🤖 Engines
+          </TabsTrigger>
+          <TabsTrigger value="analysis" className="data-[state=active]:bg-gradient-primary">
+            🧠 Analysis
           </TabsTrigger>
           <TabsTrigger value="portfolio" className="data-[state=active]:bg-gradient-primary">
-            📊 Portfolio
+            💼 Portfolio
           </TabsTrigger>
           <TabsTrigger value="risk" className="data-[state=active]:bg-gradient-primary">
             🛡️ Risk
@@ -478,6 +487,36 @@ export const CloudAtlasBot = () => {
             onPlatformDisconnect={handlePlatformDisconnect}
             onFeatureClick={handleFeatureClick}
           />
+        </TabsContent>
+
+        <TabsContent value="testing" className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold">🧪 Bot Testing Pipeline</h3>
+            <Badge variant="outline" className="text-primary border-primary">
+              Backtest → Paper → Live ($100 CAD)
+            </Badge>
+          </div>
+          <TestingDashboard />
+        </TabsContent>
+
+        <TabsContent value="regime" className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold">📊 Market Regime Detection</h3>
+            <Badge variant="outline" className="text-primary border-primary">
+              Real-time Analysis
+            </Badge>
+          </div>
+          <RegimeDetectionSystem />
+        </TabsContent>
+
+        <TabsContent value="engines" className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold">🤖 Trading Engines & ML</h3>
+            <Badge variant="outline" className="text-primary border-primary">
+              Trend + Mean Reversion + ML Ranker
+            </Badge>
+          </div>
+          <TradingEngines />
         </TabsContent>
 
         <TabsContent value="analysis" className="space-y-4">
