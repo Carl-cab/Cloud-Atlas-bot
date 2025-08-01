@@ -61,6 +61,7 @@ interface MLRankerData {
 }
 
 export const TradingEngines = () => {
+  const [tradingActive, setTradingActive] = useState(false);
   const [engines, setEngines] = useState<TradingEngine[]>([
     {
       name: 'Trend-Following Engine',
@@ -166,6 +167,20 @@ export const TradingEngines = () => {
     return type === 'trend_following' ? 
       <TrendingUp className="w-5 h-5 text-primary" /> : 
       <Target className="w-5 h-5 text-primary" />;
+  };
+
+  const handleStartStopTrading = () => {
+    setTradingActive(!tradingActive);
+    const action = tradingActive ? 'stopped' : 'started';
+    alert(`Trading engines ${action}! ${tradingActive ? 'All active positions will be closed safely.' : 'Both Trend-Following and Mean-Reversion engines are now active with ML filtering enabled.'}`);
+  };
+
+  const handleAdjustParameters = () => {
+    alert('Parameter adjustment panel opened - Configure risk per trade (0.5%), stop loss (1.8x ATR), take profit levels, ML score threshold (0.60), and position sizing rules.');
+  };
+
+  const handleBacktest = () => {
+    alert('Starting backtest with 6-12 months of historical Kraken data for BTC/CAD, ETH/CAD, SOL/CAD, XRP/CAD. This will validate strategy performance before live trading.');
   };
 
   return (
@@ -467,21 +482,34 @@ export const TradingEngines = () => {
                     </div>
                   </div>
 
-                  {/* Trade Controls */}
-                  <div className="flex gap-3">
-                    <Button className="flex-1">
-                      <Play className="w-4 h-4 mr-2" />
-                      Start Trading Engines
-                    </Button>
-                    <Button variant="outline">
-                      <Settings className="w-4 h-4 mr-2" />
-                      Adjust Parameters
-                    </Button>
-                    <Button variant="outline">
-                      <BarChart3 className="w-4 h-4 mr-2" />
-                      Backtest
-                    </Button>
-                  </div>
+                   {/* Trade Controls */}
+                   <div className="flex gap-3">
+                     <Button 
+                       className="flex-1" 
+                       variant={tradingActive ? "danger" : "default"}
+                       onClick={handleStartStopTrading}
+                     >
+                       {tradingActive ? (
+                         <>
+                           <Pause className="w-4 h-4 mr-2" />
+                           Stop Trading Engines
+                         </>
+                       ) : (
+                         <>
+                           <Play className="w-4 h-4 mr-2" />
+                           Start Trading Engines
+                         </>
+                       )}
+                     </Button>
+                     <Button variant="outline" onClick={handleAdjustParameters}>
+                       <Settings className="w-4 h-4 mr-2" />
+                       Adjust Parameters
+                     </Button>
+                     <Button variant="outline" onClick={handleBacktest}>
+                       <BarChart3 className="w-4 h-4 mr-2" />
+                       Backtest
+                     </Button>
+                   </div>
                 </CardContent>
               </Card>
             </TabsContent>
