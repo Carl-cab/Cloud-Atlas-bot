@@ -51,6 +51,11 @@ interface LiveTestingStatus {
 }
 
 export const TestingDashboard = () => {
+  const [detailedLogsOpen, setDetailedLogsOpen] = useState(false);
+  const [parametersOpen, setParametersOpen] = useState(false);
+  const [performanceReportOpen, setPerformanceReportOpen] = useState(false);
+  const [emergencyStopOpen, setEmergencyStopOpen] = useState(false);
+  const [optimizationLogOpen, setOptimizationLogOpen] = useState(false);
   const [backtestResults] = useState<BacktestResult[]>([
     {
       period: '6 Months',
@@ -253,14 +258,14 @@ export const TestingDashboard = () => {
                 <div className="flex gap-3">
                   <Button 
                     variant="outline"
-                    onClick={() => alert('Detailed logs feature activated - showing trade execution logs, signal analysis, and performance metrics')}
+                    onClick={() => setDetailedLogsOpen(true)}
                   >
                     <BarChart3 className="w-4 h-4 mr-2" />
                     View Detailed Logs
                   </Button>
                   <Button 
                     variant="outline"
-                    onClick={() => alert('Parameter adjustment panel opened - modify risk settings, position sizing, and signal thresholds')}
+                    onClick={() => setParametersOpen(true)}
                   >
                     <Target className="w-4 h-4 mr-2" />
                     Adjust Parameters
@@ -386,22 +391,22 @@ export const TestingDashboard = () => {
 
                 <div className="flex gap-3">
                   <Button 
-                    variant="danger"
-                    onClick={() => alert('EMERGENCY STOP ACTIVATED - All trading halted immediately, positions closed at market price')}
+                    variant="destructive"
+                    onClick={() => setEmergencyStopOpen(true)}
                   >
                     <Pause className="w-4 h-4 mr-2" />
                     Emergency Stop
                   </Button>
                   <Button 
                     variant="outline"
-                    onClick={() => alert('Generating comprehensive performance report - P&L analysis, trade statistics, and withdrawal recommendations')}
+                    onClick={() => setPerformanceReportOpen(true)}
                   >
                     <BarChart3 className="w-4 h-4 mr-2" />
                     Performance Report
                   </Button>
                   <Button 
                     variant="outline"
-                    onClick={() => alert('Optimization log accessed - showing ML model updates, strategy adjustments, and performance improvements')}
+                    onClick={() => setOptimizationLogOpen(true)}
                   >
                     <TrendingUp className="w-4 h-4 mr-2" />
                     Optimization Log
@@ -412,6 +417,13 @@ export const TestingDashboard = () => {
           </Tabs>
         </CardContent>
       </Card>
+
+      {/* Modals */}
+      <DetailedLogsModal open={detailedLogsOpen} onOpenChange={setDetailedLogsOpen} />
+      <ParameterAdjustmentModal open={parametersOpen} onOpenChange={setParametersOpen} />
+      <PerformanceReportModal open={performanceReportOpen} onOpenChange={setPerformanceReportOpen} />
+      <EmergencyStopModal open={emergencyStopOpen} onOpenChange={setEmergencyStopOpen} />
+      <OptimizationLogModal open={optimizationLogOpen} onOpenChange={setOptimizationLogOpen} />
     </div>
   );
 };

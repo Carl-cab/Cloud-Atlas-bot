@@ -62,6 +62,8 @@ interface MLRankerData {
 
 export const TradingEngines = () => {
   const [tradingActive, setTradingActive] = useState(false);
+  const [parametersOpen, setParametersOpen] = useState(false);
+  const [backtestOpen, setBacktestOpen] = useState(false);
   const [engines, setEngines] = useState<TradingEngine[]>([
     {
       name: 'Trend-Following Engine',
@@ -176,11 +178,11 @@ export const TradingEngines = () => {
   };
 
   const handleAdjustParameters = () => {
-    alert('Parameter adjustment panel opened - Configure risk per trade (0.5%), stop loss (1.8x ATR), take profit levels, ML score threshold (0.60), and position sizing rules.');
+    setParametersOpen(true);
   };
 
   const handleBacktest = () => {
-    alert('Starting backtest with 6-12 months of historical Kraken data for BTC/CAD, ETH/CAD, SOL/CAD, XRP/CAD. This will validate strategy performance before live trading.');
+    setBacktestOpen(true);
   };
 
   return (
@@ -516,6 +518,10 @@ export const TradingEngines = () => {
           </Tabs>
         </CardContent>
       </Card>
+
+      {/* Modals */}
+      <ParameterAdjustmentModal open={parametersOpen} onOpenChange={setParametersOpen} />
+      <BacktestModal open={backtestOpen} onOpenChange={setBacktestOpen} />
     </div>
   );
 };
