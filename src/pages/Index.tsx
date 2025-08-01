@@ -1,7 +1,7 @@
-import { RealTimeTradingDashboard } from '@/components/RealTimeTradingDashboard';
+import { CloudAtlasBot } from '@/components/CloudAtlasBot';
 
 const Index = () => {
-  return <RealTimeTradingDashboard />;
+  return <CloudAtlasBot />;
 };
 
 export default Index;
