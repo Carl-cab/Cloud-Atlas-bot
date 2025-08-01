@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { toast } from '@/components/ui/use-toast';
 import { 
   TrendingUp, 
   TrendingDown, 
@@ -32,9 +33,19 @@ interface TradingStats {
   botStatus: 'active' | 'paused' | 'stopped';
 }
 
+interface PlatformStatus {
+  [key: string]: 'connected' | 'disconnected' | 'pending';
+}
+
 export const TradingDashboard = () => {
   const [selectedPlatform, setSelectedPlatform] = useState<string>('binance');
   const [botActive, setBotActive] = useState(false);
+  const [platformStatuses, setPlatformStatuses] = useState<PlatformStatus>({
+    binance: 'connected',
+    coinbase: 'disconnected', 
+    kraken: 'connected',
+    bybit: 'pending'
+  });
   const [stats, setStats] = useState<TradingStats>({
     totalBalance: 12458.32,
     todayPnL: 234.56,
@@ -65,6 +76,79 @@ export const TradingDashboard = () => {
     }));
   };
 
+  const handlePlatformConnect = (platformId: string) => {
+    setPlatformStatuses(prev => ({ ...prev, [platformId]: 'pending' }));
+    
+    // Simulate connection process
+    setTimeout(() => {
+      setPlatformStatuses(prev => ({ ...prev, [platformId]: 'connected' }));
+      toast({
+        title: "Platform Connected",
+        description: `Successfully connected to ${platformId.charAt(0).toUpperCase() + platformId.slice(1)}`,
+      });
+    }, 2000);
+    
+    toast({
+      title: "Connecting...",
+      description: `Establishing connection to ${platformId.charAt(0).toUpperCase() + platformId.slice(1)}`,
+    });
+  };
+
+  const handlePlatformDisconnect = (platformId: string) => {
+    setPlatformStatuses(prev => ({ ...prev, [platformId]: 'disconnected' }));
+    toast({
+      title: "Platform Disconnected",
+      description: `Disconnected from ${platformId.charAt(0).toUpperCase() + platformId.slice(1)}`,
+      variant: "destructive",
+    });
+  };
+
+  const handleFeatureClick = (platformId: string, feature: string) => {
+    const platformName = platformId.charAt(0).toUpperCase() + platformId.slice(1);
+    
+    switch (feature.toLowerCase()) {
+      case 'spot trading':
+        window.open(`https://${platformId}.com/en/trade`, '_blank');
+        break;
+      case 'futures':
+        window.open(`https://${platformId}.com/en/futures`, '_blank');
+        break;
+      case 'options':
+        window.open(`https://${platformId}.com/en/options`, '_blank');
+        break;
+      case 'staking':
+        window.open(`https://${platformId}.com/en/staking`, '_blank');
+        break;
+      case 'margin trading':
+        window.open(`https://${platformId}.com/en/margin`, '_blank');
+        break;
+      case 'derivatives':
+        window.open(`https://${platformId}.com/en/derivatives`, '_blank');
+        break;
+      case 'copy trading':
+        window.open(`https://${platformId}.com/en/copy-trading`, '_blank');
+        break;
+      case 'advanced orders':
+        window.open(`https://${platformId}.com/en/orders`, '_blank');
+        break;
+      case 'api access':
+        window.open(`https://${platformId}.com/en/api`, '_blank');
+        break;
+      case 'configure':
+        toast({
+          title: `${platformName} Configuration`,
+          description: `Opening ${platformName} configuration panel...`,
+        });
+        // Here you would typically open a configuration modal
+        break;
+      default:
+        toast({
+          title: feature,
+          description: `Opening ${feature} for ${platformName}...`,
+        });
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-hero p-6">
       <div className="max-w-7xl mx-auto space-y-8">
@@ -80,13 +164,22 @@ export const TradingDashboard = () => {
           </div>
           
           <div className="flex items-center gap-4">
-            <Badge 
-              variant={stats.botStatus === 'active' ? 'default' : 'secondary'}
-              className="px-4 py-2"
-            >
-              <Bot className="w-4 h-4 mr-2" />
-              Bot {stats.botStatus}
-            </Badge>
+            <div className="flex items-center gap-2">
+              <Badge 
+                variant={stats.botStatus === 'active' ? 'default' : 'secondary'}
+                className="px-4 py-2"
+              >
+                <Bot className="w-4 h-4 mr-2" />
+                Bot {stats.botStatus}
+              </Badge>
+              
+              <Badge 
+                variant={platformStatuses[selectedPlatform] === 'connected' ? 'default' : 'secondary'}
+                className="px-3 py-2"
+              >
+                {selectedPlatform.charAt(0).toUpperCase() + selectedPlatform.slice(1)}: {platformStatuses[selectedPlatform]}
+              </Badge>
+            </div>
             
             <Button
               variant={botActive ? "danger" : "trading"}
@@ -204,9 +297,10 @@ export const TradingDashboard = () => {
                 <PlatformSelector 
                   selectedPlatform={selectedPlatform}
                   onPlatformChange={setSelectedPlatform}
-                  onPlatformConnect={() => {}}
-                  onPlatformDisconnect={() => {}}
-                  onFeatureClick={() => {}}
+                  onPlatformConnect={handlePlatformConnect}
+                  onPlatformDisconnect={handlePlatformDisconnect}
+                  onFeatureClick={handleFeatureClick}
+                  platformStatuses={platformStatuses}
                 />
               </div>
               <div className="lg:col-span-2">
