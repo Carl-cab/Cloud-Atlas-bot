@@ -756,7 +756,33 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      get_notification_settings: {
+        Args: { p_user_id: string }
+        Returns: {
+          telegram_enabled: boolean
+          email_enabled: boolean
+          daily_reports: boolean
+          trade_alerts: boolean
+          risk_alerts: boolean
+          performance_summary: boolean
+          email_address: string
+          telegram_chat_id: string
+        }[]
+      }
+      upsert_notification_settings: {
+        Args: {
+          p_user_id: string
+          p_telegram_enabled?: boolean
+          p_email_enabled?: boolean
+          p_daily_reports?: boolean
+          p_trade_alerts?: boolean
+          p_risk_alerts?: boolean
+          p_performance_summary?: boolean
+          p_email_address?: string
+          p_telegram_chat_id?: string
+        }
+        Returns: undefined
+      }
     }
     Enums: {
       [_ in never]: never
