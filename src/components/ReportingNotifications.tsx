@@ -91,14 +91,27 @@ export const ReportingNotifications = () => {
       const user = await supabase.auth.getUser();
       if (!user.data.user) return;
 
+      // Use direct query instead of typed query to avoid type issues
       const { data, error } = await supabase
-        .from('notification_settings')
-        .select('*')
-        .eq('user_id', user.data.user.id)
-        .single();
+        .rpc('get_notification_settings', { p_user_id: user.data.user.id });
 
-      if (data) {
-        setSettings(data);
+      if (error) {
+        console.log('No existing settings found, using defaults');
+        return;
+      }
+
+      if (data && data.length > 0) {
+        const settingsData = data[0];
+        setSettings({
+          telegram_enabled: settingsData.telegram_enabled || false,
+          email_enabled: settingsData.email_enabled || false,
+          daily_reports: settingsData.daily_reports !== false,
+          trade_alerts: settingsData.trade_alerts !== false,
+          risk_alerts: settingsData.risk_alerts !== false,
+          performance_summary: settingsData.performance_summary !== false,
+          email_address: settingsData.email_address,
+          telegram_chat_id: settingsData.telegram_chat_id,
+        });
       }
     } catch (error) {
       console.error('Error fetching notification settings:', error);
@@ -133,13 +146,18 @@ export const ReportingNotifications = () => {
       const user = await supabase.auth.getUser();
       if (!user.data.user) throw new Error('User not authenticated');
 
-      const { error } = await supabase
-        .from('notification_settings')
-        .upsert({
-          user_id: user.data.user.id,
-          ...settings,
-          updated_at: new Date().toISOString()
-        });
+      // Use RPC function to handle upsert
+      const { error } = await supabase.rpc('upsert_notification_settings', {
+        p_user_id: user.data.user.id,
+        p_telegram_enabled: settings.telegram_enabled,
+        p_email_enabled: settings.email_enabled,
+        p_daily_reports: settings.daily_reports,
+        p_trade_alerts: settings.trade_alerts,
+        p_risk_alerts: settings.risk_alerts,
+        p_performance_summary: settings.performance_summary,
+        p_email_address: settings.email_address,
+        p_telegram_chat_id: settings.telegram_chat_id
+      });
 
       if (error) throw error;
 
