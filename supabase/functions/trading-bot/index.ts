@@ -403,6 +403,123 @@ ${reason ? `<b>Reason:</b> ${reason}` : ''}
   }
 }
 
+// Helper function to generate strategy signals
+function generateStrategySignal(strategy: string, marketData: any[], config: any = {}) {
+  const latest = marketData[0];
+  const prices = marketData.map(d => parseFloat(d.close)).reverse();
+  
+  if (strategy === 'trend_following') {
+    // Calculate EMAs
+    const ema9 = calculateEMA(prices, 9);
+    const ema21 = calculateEMA(prices, 21);
+    
+    // Calculate MACD (simplified)
+    const macdLine = ema9[ema9.length - 1] - ema21[ema21.length - 1];
+    
+    // Trend following logic
+    const emaSignal = ema9[ema9.length - 1] > ema21[ema21.length - 1] ? 'buy' : 'sell';
+    
+    let signalType = 'hold';
+    let confidence = 50;
+    
+    if (emaSignal === 'buy' && macdLine > 0) {
+      signalType = 'buy';
+      confidence = Math.min(95, 70 + Math.abs(macdLine) * 10);
+    } else if (emaSignal === 'sell' && macdLine < 0) {
+      signalType = 'sell';
+      confidence = Math.min(95, 70 + Math.abs(macdLine) * 10);
+    }
+    
+    return {
+      type: signalType,
+      confidence,
+      price: parseFloat(latest.close),
+      indicators: {
+        ema9: ema9[ema9.length - 1],
+        ema21: ema21[ema21.length - 1],
+        macd: macdLine
+      },
+      mlScore: null
+    };
+    
+  } else if (strategy === 'mean_reversion') {
+    // Calculate RSI
+    const rsi = calculateRSI(prices, 14);
+    const currentRSI = rsi[rsi.length - 1] || 50;
+    const currentPrice = parseFloat(latest.close);
+    
+    let signalType = 'hold';
+    let confidence = 50;
+    
+    // Mean reversion logic
+    if (currentRSI < (config.rsiOversold || 30)) {
+      signalType = 'buy';
+      confidence = Math.min(95, 70 + (30 - currentRSI));
+    } else if (currentRSI > (config.rsiOverbought || 70)) {
+      signalType = 'sell';
+      confidence = Math.min(95, 70 + (currentRSI - 70));
+    }
+    
+    return {
+      type: signalType,
+      confidence,
+      price: currentPrice,
+      indicators: {
+        rsi: currentRSI
+      },
+      mlScore: null
+    };
+  }
+  
+  // Default hold signal
+  return {
+    type: 'hold',
+    confidence: 50,
+    price: parseFloat(latest.close),
+    indicators: {},
+    mlScore: null
+  };
+}
+
+// Technical indicator calculation functions
+function calculateEMA(prices: number[], period: number): number[] {
+  const ema = [];
+  const k = 2 / (period + 1);
+  ema[0] = prices[0];
+  
+  for (let i = 1; i < prices.length; i++) {
+    ema[i] = prices[i] * k + ema[i - 1] * (1 - k);
+  }
+  
+  return ema;
+}
+
+function calculateRSI(prices: number[], period: number): number[] {
+  const rsi = [];
+  const gains = [];
+  const losses = [];
+  
+  for (let i = 1; i < prices.length; i++) {
+    const change = prices[i] - prices[i - 1];
+    gains.push(change > 0 ? change : 0);
+    losses.push(change < 0 ? -change : 0);
+  }
+  
+  for (let i = period - 1; i < gains.length; i++) {
+    const avgGain = gains.slice(i - period + 1, i + 1).reduce((a, b) => a + b, 0) / period;
+    const avgLoss = losses.slice(i - period + 1, i + 1).reduce((a, b) => a + b, 0) / period;
+    
+    if (avgLoss === 0) {
+      rsi.push(100);
+    } else {
+      const rs = avgGain / avgLoss;
+      rsi.push(100 - (100 / (1 + rs)));
+    }
+  }
+  
+  return rsi;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -455,6 +572,81 @@ serve(async (req) => {
           regime,
           signal,
           marketData: formattedData.slice(-20)
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+
+      case 'generate_signal':
+        const { strategy, config = {} } = await req.json();
+        
+        // Get recent market data
+        const { data: recentData } = await supabase
+          .from('market_data')
+          .select('*')
+          .eq('symbol', symbol)
+          .order('timestamp', { ascending: false })
+          .limit(50);
+        
+        if (!recentData || recentData.length === 0) {
+          return new Response(JSON.stringify({ error: 'No market data available' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+        
+        const strategySignal = generateStrategySignal(strategy, recentData, config);
+        
+        // Store signal
+        await supabase.from('strategy_signals').insert({
+          symbol,
+          signal_type: strategySignal.type,
+          strategy_type: strategy,
+          confidence: strategySignal.confidence,
+          price: strategySignal.price,
+          timestamp: new Date().toISOString(),
+          indicators: strategySignal.indicators,
+          ml_score: strategySignal.mlScore
+        });
+        
+        return new Response(JSON.stringify({ signal: strategySignal }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+
+      case 'start_strategies':
+        const { strategies = [], config: strategyConfig = {} } = await req.json();
+        
+        // Generate initial signals for each strategy
+        for (const strategy of strategies) {
+          try {
+            const { data: recentData } = await supabase
+              .from('market_data')
+              .select('*')
+              .eq('symbol', symbol)
+              .order('timestamp', { ascending: false })
+              .limit(50);
+            
+            if (recentData && recentData.length > 0) {
+              const strategySignal = generateStrategySignal(strategy, recentData, strategyConfig);
+              
+              await supabase.from('strategy_signals').insert({
+                symbol,
+                signal_type: strategySignal.type,
+                strategy_type: strategy,
+                confidence: strategySignal.confidence,
+                price: strategySignal.price,
+                timestamp: new Date().toISOString(),
+                indicators: strategySignal.indicators,
+                ml_score: strategySignal.mlScore
+              });
+            }
+          } catch (error) {
+            console.error(`Error generating ${strategy} signal:`, error);
+          }
+        }
+        
+        return new Response(JSON.stringify({ 
+          message: 'Strategy engines started',
+          strategies 
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });

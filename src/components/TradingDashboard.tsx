@@ -25,6 +25,7 @@ import { PortfolioOverview } from './PortfolioOverview';
 import { RiskManagement } from './RiskManagement';
 import { MLTradingInterface } from './MLTradingInterface';
 import { SchedulingControls } from './SchedulingControls';
+import { StrategyEngines } from './StrategyEngines';
 
 interface TradingStats {
   totalBalance: number;
@@ -285,8 +286,9 @@ export const TradingDashboard = () => {
 
         {/* Main Content */}
         <Tabs defaultValue="trading" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-6">
+          <TabsList className="grid w-full grid-cols-7">
             <TabsTrigger value="trading">Trading</TabsTrigger>
+            <TabsTrigger value="strategies">Strategies</TabsTrigger>
             <TabsTrigger value="ml">ML Engine</TabsTrigger>
             <TabsTrigger value="analysis">Analysis</TabsTrigger>
             <TabsTrigger value="portfolio">Portfolio</TabsTrigger>
@@ -314,6 +316,10 @@ export const TradingDashboard = () => {
                 />
               </div>
             </div>
+          </TabsContent>
+
+          <TabsContent value="strategies">
+            <StrategyEngines />
           </TabsContent>
 
           <TabsContent value="ml">
