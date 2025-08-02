@@ -27,7 +27,7 @@ import { MLTradingInterface } from './MLTradingInterface';
 import { SchedulingControls } from './SchedulingControls';
 import { StrategyEngines } from './StrategyEngines';
 import { MLTradeFilter } from './MLTradeFilter';
-import { LiveTradingExecution } from './LiveTradingExecution';
+import { Zap } from 'lucide-react';
 
 interface TradingStats {
   totalBalance: number;
@@ -323,7 +323,21 @@ export const TradingDashboard = () => {
           </TabsContent>
 
           <TabsContent value="live-execution">
-            <LiveTradingExecution />
+            <div className="text-center py-12">
+              <Zap className="h-16 w-16 mx-auto text-primary mb-4" />
+              <h3 className="text-2xl font-bold mb-2">Live Trading Terminal</h3>
+              <p className="text-muted-foreground mb-6">
+                Access the dedicated live trading interface for real-time order execution
+              </p>
+              <Button 
+                onClick={() => window.open('/live-trading', '_blank')}
+                className="px-8 py-3"
+                size="lg"
+              >
+                <Play className="h-5 w-5 mr-2" />
+                Open Live Trading Terminal
+              </Button>
+            </div>
           </TabsContent>
 
           <TabsContent value="strategies">
