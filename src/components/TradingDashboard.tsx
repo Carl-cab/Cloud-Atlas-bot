@@ -27,6 +27,7 @@ import { MLTradingInterface } from './MLTradingInterface';
 import { SchedulingControls } from './SchedulingControls';
 import { StrategyEngines } from './StrategyEngines';
 import { MLTradeFilter } from './MLTradeFilter';
+import { ReportingNotifications } from './ReportingNotifications';
 import { Zap } from 'lucide-react';
 
 interface TradingStats {
@@ -288,7 +289,7 @@ export const TradingDashboard = () => {
 
         {/* Main Content */}
         <Tabs defaultValue="trading" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-9">
+          <TabsList className="grid w-full grid-cols-10">
             <TabsTrigger value="trading">Trading</TabsTrigger>
             <TabsTrigger value="live-execution">Live Trading</TabsTrigger>
             <TabsTrigger value="strategies">Strategies</TabsTrigger>
@@ -297,6 +298,7 @@ export const TradingDashboard = () => {
             <TabsTrigger value="analysis">Analysis</TabsTrigger>
             <TabsTrigger value="portfolio">Portfolio</TabsTrigger>
             <TabsTrigger value="risk">Risk Management</TabsTrigger>
+            <TabsTrigger value="reports">Reports</TabsTrigger>
             <TabsTrigger value="settings">Settings</TabsTrigger>
           </TabsList>
 
@@ -362,6 +364,10 @@ export const TradingDashboard = () => {
 
           <TabsContent value="risk">
             <RiskManagement />
+          </TabsContent>
+
+          <TabsContent value="reports">
+            <ReportingNotifications />
           </TabsContent>
 
           <TabsContent value="settings">
