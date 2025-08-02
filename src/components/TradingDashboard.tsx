@@ -27,6 +27,7 @@ import { MLTradingInterface } from './MLTradingInterface';
 import { SchedulingControls } from './SchedulingControls';
 import { StrategyEngines } from './StrategyEngines';
 import { MLTradeFilter } from './MLTradeFilter';
+import { LiveTradingExecution } from './LiveTradingExecution';
 
 interface TradingStats {
   totalBalance: number;
@@ -287,8 +288,9 @@ export const TradingDashboard = () => {
 
         {/* Main Content */}
         <Tabs defaultValue="trading" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-8">
+          <TabsList className="grid w-full grid-cols-9">
             <TabsTrigger value="trading">Trading</TabsTrigger>
+            <TabsTrigger value="live-execution">Live Trading</TabsTrigger>
             <TabsTrigger value="strategies">Strategies</TabsTrigger>
             <TabsTrigger value="ml">ML Engine</TabsTrigger>
             <TabsTrigger value="ml-filter">ML Filter</TabsTrigger>
@@ -318,6 +320,10 @@ export const TradingDashboard = () => {
                 />
               </div>
             </div>
+          </TabsContent>
+
+          <TabsContent value="live-execution">
+            <LiveTradingExecution />
           </TabsContent>
 
           <TabsContent value="strategies">
