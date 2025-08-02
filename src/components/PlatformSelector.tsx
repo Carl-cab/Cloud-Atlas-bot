@@ -3,6 +3,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Check, ExternalLink, Wifi, WifiOff } from 'lucide-react';
+import { AddPlatformModal } from '@/components/modals/AddPlatformModal';
+import { toast } from 'sonner';
 
 interface Platform {
   id: string;
@@ -30,7 +32,7 @@ export const PlatformSelector = ({
   onFeatureClick,
   platformStatuses = {}
 }: PlatformSelectorProps) => {
-  const [platforms] = useState<Platform[]>([
+  const [platforms, setPlatforms] = useState<Platform[]>([
     {
       id: 'binance',
       name: 'Binance',
@@ -64,6 +66,8 @@ export const PlatformSelector = ({
       logo: '🟠'
     }
   ]);
+  
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
 
   // Get current status from props or fall back to default
   const getCurrentStatus = (platformId: string, defaultStatus: string) => {
@@ -86,6 +90,11 @@ export const PlatformSelector = ({
       case 'pending': return <div className="w-3 h-3 rounded-full bg-primary animate-trading-pulse" />;
       default: return <WifiOff className="w-3 h-3" />;
     }
+  };
+
+  const handleAddPlatform = (newPlatform: Platform) => {
+    setPlatforms(prev => [...prev, newPlatform]);
+    toast.success(`${newPlatform.name} platform added successfully!`);
   };
 
   return (
@@ -210,9 +219,19 @@ export const PlatformSelector = ({
           );
         })}
 
-        <Button variant="outline" className="w-full">
+        <Button 
+          variant="outline" 
+          className="w-full"
+          onClick={() => setIsAddModalOpen(true)}
+        >
           Add New Platform
         </Button>
+
+        <AddPlatformModal
+          isOpen={isAddModalOpen}
+          onClose={() => setIsAddModalOpen(false)}
+          onAddPlatform={handleAddPlatform}
+        />
       </CardContent>
     </Card>
   );
