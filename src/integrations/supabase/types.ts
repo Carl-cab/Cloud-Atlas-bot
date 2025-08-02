@@ -397,6 +397,45 @@ export type Database = {
         }
         Relationships: []
       }
+      position_sizing_calculations: {
+        Row: {
+          calculation_method: string
+          confidence_level: number
+          created_at: string
+          id: string
+          inputs: Json
+          max_size: number
+          recommended_size: number
+          risk_score: number
+          symbol: string
+          user_id: string
+        }
+        Insert: {
+          calculation_method: string
+          confidence_level?: number
+          created_at?: string
+          id?: string
+          inputs: Json
+          max_size: number
+          recommended_size: number
+          risk_score: number
+          symbol: string
+          user_id: string
+        }
+        Update: {
+          calculation_method?: string
+          confidence_level?: number
+          created_at?: string
+          id?: string
+          inputs?: Json
+          max_size?: number
+          recommended_size?: number
+          risk_score?: number
+          symbol?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -425,6 +464,120 @@ export type Database = {
           id?: string
           portfolio_settings?: Json | null
           trading_preferences?: Json | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      risk_events: {
+        Row: {
+          actions_taken: string[] | null
+          created_at: string
+          description: string
+          event_type: string
+          id: string
+          resolved_at: string | null
+          severity: string
+          triggered_by: Json | null
+          user_id: string
+        }
+        Insert: {
+          actions_taken?: string[] | null
+          created_at?: string
+          description: string
+          event_type: string
+          id?: string
+          resolved_at?: string | null
+          severity: string
+          triggered_by?: Json | null
+          user_id: string
+        }
+        Update: {
+          actions_taken?: string[] | null
+          created_at?: string
+          description?: string
+          event_type?: string
+          id?: string
+          resolved_at?: string | null
+          severity?: string
+          triggered_by?: Json | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      risk_limits_monitoring: {
+        Row: {
+          current_value: number
+          id: string
+          last_updated: string
+          limit_type: string
+          limit_value: number
+          status: string
+          user_id: string
+          utilization_percentage: number
+        }
+        Insert: {
+          current_value: number
+          id?: string
+          last_updated?: string
+          limit_type: string
+          limit_value: number
+          status?: string
+          user_id: string
+          utilization_percentage: number
+        }
+        Update: {
+          current_value?: number
+          id?: string
+          last_updated?: string
+          limit_type?: string
+          limit_value?: number
+          status?: string
+          user_id?: string
+          utilization_percentage?: number
+        }
+        Relationships: []
+      }
+      risk_settings: {
+        Row: {
+          circuit_breaker_enabled: boolean
+          circuit_breaker_threshold: number
+          created_at: string
+          id: string
+          max_correlation_exposure: number
+          max_daily_loss: number
+          max_portfolio_risk: number
+          max_position_size: number
+          max_symbol_exposure: number
+          position_sizing_method: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          circuit_breaker_enabled?: boolean
+          circuit_breaker_threshold?: number
+          created_at?: string
+          id?: string
+          max_correlation_exposure?: number
+          max_daily_loss?: number
+          max_portfolio_risk?: number
+          max_position_size?: number
+          max_symbol_exposure?: number
+          position_sizing_method?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          circuit_breaker_enabled?: boolean
+          circuit_breaker_threshold?: number
+          created_at?: string
+          id?: string
+          max_correlation_exposure?: number
+          max_daily_loss?: number
+          max_portfolio_risk?: number
+          max_position_size?: number
+          max_symbol_exposure?: number
+          position_sizing_method?: string
           updated_at?: string
           user_id?: string
         }
