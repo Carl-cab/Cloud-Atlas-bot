@@ -397,6 +397,78 @@ export type Database = {
         }
         Relationships: []
       }
+      notification_logs: {
+        Row: {
+          created_at: string
+          details: Json | null
+          id: string
+          notification_type: string
+          status: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          details?: Json | null
+          id?: string
+          notification_type: string
+          status: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          details?: Json | null
+          id?: string
+          notification_type?: string
+          status?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      notification_settings: {
+        Row: {
+          created_at: string
+          daily_reports: boolean | null
+          email_address: string | null
+          email_enabled: boolean | null
+          id: string
+          performance_summary: boolean | null
+          risk_alerts: boolean | null
+          telegram_chat_id: string | null
+          telegram_enabled: boolean | null
+          trade_alerts: boolean | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          daily_reports?: boolean | null
+          email_address?: string | null
+          email_enabled?: boolean | null
+          id?: string
+          performance_summary?: boolean | null
+          risk_alerts?: boolean | null
+          telegram_chat_id?: string | null
+          telegram_enabled?: boolean | null
+          trade_alerts?: boolean | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          daily_reports?: boolean | null
+          email_address?: string | null
+          email_enabled?: boolean | null
+          id?: string
+          performance_summary?: boolean | null
+          risk_alerts?: boolean | null
+          telegram_chat_id?: string | null
+          telegram_enabled?: boolean | null
+          trade_alerts?: boolean | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       position_sizing_calculations: {
         Row: {
           calculation_method: string
