@@ -244,6 +244,72 @@ export type Database = {
         }
         Relationships: []
       }
+      ml_feature_importance: {
+        Row: {
+          created_at: string
+          feature_name: string
+          id: string
+          importance_score: number
+          model_version: string
+        }
+        Insert: {
+          created_at?: string
+          feature_name: string
+          id?: string
+          importance_score: number
+          model_version: string
+        }
+        Update: {
+          created_at?: string
+          feature_name?: string
+          id?: string
+          importance_score?: number
+          model_version?: string
+        }
+        Relationships: []
+      }
+      ml_model_performance: {
+        Row: {
+          accuracy: number | null
+          created_at: string
+          f1_score: number | null
+          id: string
+          model_version: string
+          precision_score: number | null
+          recall_score: number | null
+          symbol: string
+          total_trades: number | null
+          updated_at: string
+          winning_trades: number | null
+        }
+        Insert: {
+          accuracy?: number | null
+          created_at?: string
+          f1_score?: number | null
+          id?: string
+          model_version: string
+          precision_score?: number | null
+          recall_score?: number | null
+          symbol: string
+          total_trades?: number | null
+          updated_at?: string
+          winning_trades?: number | null
+        }
+        Update: {
+          accuracy?: number | null
+          created_at?: string
+          f1_score?: number | null
+          id?: string
+          model_version?: string
+          precision_score?: number | null
+          recall_score?: number | null
+          symbol?: string
+          total_trades?: number | null
+          updated_at?: string
+          winning_trades?: number | null
+        }
+        Relationships: []
+      }
       ml_models: {
         Row: {
           accuracy: number | null
@@ -292,6 +358,42 @@ export type Database = {
           trained_at?: string
           training_data_size?: number | null
           version?: number
+        }
+        Relationships: []
+      }
+      ml_trading_signals: {
+        Row: {
+          confidence: number
+          created_at: string
+          features: Json
+          id: string
+          position_size: number
+          risk_amount: number
+          signal_type: string
+          symbol: string
+          updated_at: string
+        }
+        Insert: {
+          confidence: number
+          created_at?: string
+          features: Json
+          id?: string
+          position_size: number
+          risk_amount: number
+          signal_type: string
+          symbol: string
+          updated_at?: string
+        }
+        Update: {
+          confidence?: number
+          created_at?: string
+          features?: Json
+          id?: string
+          position_size?: number
+          risk_amount?: number
+          signal_type?: string
+          symbol?: string
+          updated_at?: string
         }
         Relationships: []
       }
