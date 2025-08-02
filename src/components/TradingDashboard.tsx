@@ -24,6 +24,7 @@ import { AutoTradingControls } from './AutoTradingControls';
 import { PortfolioOverview } from './PortfolioOverview';
 import { RiskManagement } from './RiskManagement';
 import { MLTradingInterface } from './MLTradingInterface';
+import { SchedulingControls } from './SchedulingControls';
 
 interface TradingStats {
   totalBalance: number;
@@ -332,56 +333,23 @@ export const TradingDashboard = () => {
           </TabsContent>
 
           <TabsContent value="settings">
-            <Card className="card-shadow">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Settings className="w-5 h-5" />
-                  Bot Settings
-                </CardTitle>
-                <CardDescription>
-                  Configure your trading bot parameters and preferences
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between p-4 border rounded-lg">
-                    <div>
-                      <h4 className="font-medium">Auto Trading</h4>
-                      <p className="text-sm text-muted-foreground">
-                        Enable automated trading decisions
-                      </p>
-                    </div>
-                    <Button variant="outline" size="sm">
-                      Configure
-                    </Button>
-                  </div>
-                  
-                  <div className="flex items-center justify-between p-4 border rounded-lg">
-                    <div>
-                      <h4 className="font-medium">Risk Parameters</h4>
-                      <p className="text-sm text-muted-foreground">
-                        Set maximum risk tolerance and stop-loss levels
-                      </p>
-                    </div>
-                    <Button variant="outline" size="sm">
-                      Configure
-                    </Button>
-                  </div>
-                  
-                  <div className="flex items-center justify-between p-4 border rounded-lg">
-                    <div>
-                      <h4 className="font-medium">Notifications</h4>
-                      <p className="text-sm text-muted-foreground">
-                        Configure alerts and trade notifications
-                      </p>
-                    </div>
-                    <Button variant="outline" size="sm">
-                      Configure
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+            <SchedulingControls 
+              onScheduleChange={(isActive, stopTime) => {
+                toast({
+                  title: isActive ? "Schedule Updated" : "Schedule Disabled",
+                  description: isActive ? `Auto-stop set for ${stopTime} PT` : "Manual control enabled",
+                });
+              }}
+              onEmergencyStop={() => {
+                setBotActive(false);
+                setStats(prev => ({ ...prev, botStatus: 'stopped' }));
+                toast({
+                  title: "Emergency Stop Activated",
+                  description: "All trading activities have been halted",
+                  variant: "destructive",
+                });
+              }}
+            />
           </TabsContent>
         </Tabs>
       </div>
