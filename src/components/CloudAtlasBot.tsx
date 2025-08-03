@@ -29,6 +29,7 @@ import { RiskManagement } from './RiskManagement';
 import { RegimeDetectionSystem } from './RegimeDetectionSystem';
 import { TradingEngines } from './TradingEngines';
 import { TestingDashboard } from './TestingDashboard';
+import { LiveTradingActivation } from './LiveTradingActivation';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
@@ -283,6 +284,15 @@ export const CloudAtlasBot = () => {
           <Button
             variant="outline"
             size="sm"
+            onClick={() => window.open('/live-trading', '_blank')}
+          >
+            <Target className="w-4 h-4 mr-2" />
+            Live Terminal
+          </Button>
+          
+          <Button
+            variant="outline"
+            size="sm"
             onClick={signOut}
           >
             <LogOut className="w-4 h-4 mr-2" />
@@ -446,7 +456,7 @@ export const CloudAtlasBot = () => {
 
       {/* Main Dashboard Tabs */}
       <Tabs defaultValue="platform" className="w-full">
-        <TabsList className="grid w-full grid-cols-8 bg-card/50 backdrop-blur-sm text-xs lg:text-sm">
+        <TabsList className="grid w-full grid-cols-9 bg-card/50 backdrop-blur-sm text-xs lg:text-sm">
           <TabsTrigger value="platform" className="data-[state=active]:bg-gradient-primary">
             🏦 Platform
           </TabsTrigger>
@@ -470,6 +480,9 @@ export const CloudAtlasBot = () => {
           </TabsTrigger>
           <TabsTrigger value="settings" className="data-[state=active]:bg-gradient-primary">
             ⚙️ Settings
+          </TabsTrigger>
+          <TabsTrigger value="live-activation" className="data-[state=active]:bg-gradient-primary">
+            🚀 Go Live
           </TabsTrigger>
         </TabsList>
 
@@ -798,6 +811,19 @@ export const CloudAtlasBot = () => {
               </CardContent>
             </Card>
           </div>
+        </TabsContent>
+        
+        <TabsContent value="live-activation" className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold">🚀 Live Trading Activation</h3>
+            <Badge variant="outline" className="text-primary border-primary">
+              Production Ready
+            </Badge>
+          </div>
+          <LiveTradingActivation 
+            isLiveMode={false}
+            onLiveModeChange={(enabled) => console.log('Live mode:', enabled)}
+          />
         </TabsContent>
       </Tabs>
     </div>

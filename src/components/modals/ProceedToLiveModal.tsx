@@ -23,14 +23,35 @@ export const ProceedToLiveModal = ({ open, onOpenChange }: ProceedToLiveModalPro
     { item: "5% drawdown circuit breaker enabled", checked: true }
   ];
 
-  const handleProceed = () => {
+  const handleProceed = async () => {
     setConfirmed(true);
-    // Here you would actually start live trading
-    console.log('Live trading initiated with $100 CAD');
-    setTimeout(() => {
-      onOpenChange(false);
+    try {
+      // Start live trading through the live-trading-engine
+      const response = await fetch('https://asxcbnkpflgecqreegdd.supabase.co/functions/v1/live-trading-engine', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('supabase.auth.token')}`
+        },
+        body: JSON.stringify({
+          action: 'activate_live_trading',
+          capital: 100
+        })
+      });
+      
+      if (!response.ok) throw new Error('Failed to activate live trading');
+      
+      const data = await response.json();
+      console.log('Live trading initiated with $100 CAD:', data);
+      
+      setTimeout(() => {
+        onOpenChange(false);
+        setConfirmed(false);
+      }, 2000);
+    } catch (error) {
+      console.error('Failed to activate live trading:', error);
       setConfirmed(false);
-    }, 2000);
+    }
   };
 
   return (
