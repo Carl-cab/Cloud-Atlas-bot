@@ -28,6 +28,7 @@ import { SchedulingControls } from './SchedulingControls';
 import { StrategyEngines } from './StrategyEngines';
 import { MLTradeFilter } from './MLTradeFilter';
 import { ReportingNotifications } from './ReportingNotifications';
+import { GlobalCommandPalette } from './GlobalCommandPalette';
 import { Zap } from 'lucide-react';
 
 interface TradingStats {
@@ -60,6 +61,7 @@ export const TradingDashboard = () => {
     activeTrades: 3,
     botStatus: 'paused'
   });
+  const [activeTab, setActiveTab] = useState<string>('trading');
 
   useEffect(() => {
     // Simulate real-time updates
@@ -152,6 +154,47 @@ export const TradingDashboard = () => {
           title: feature,
           description: `Opening ${feature} for ${platformName}...`,
         });
+    }
+  };
+
+  const handleNavigate = (tab: string) => {
+    setActiveTab(tab);
+  };
+
+  const handlePlatformAction = (action: string) => {
+    const [actionType, platform] = action.split('-');
+    if (actionType === 'connect') {
+      handlePlatformConnect(platform);
+    } else if (action === 'sync-platforms') {
+      toast({
+        title: "Platform Sync",
+        description: "Synchronizing all connected platforms...",
+      });
+    }
+  };
+
+  const handleTradingAction = (action: string) => {
+    switch (action) {
+      case 'start-bot':
+        if (!botActive) {
+          setBotActive(true);
+          setStats(prev => ({ ...prev, botStatus: 'active' }));
+        }
+        break;
+      case 'stop-bot':
+        if (botActive) {
+          setBotActive(false);
+          setStats(prev => ({ ...prev, botStatus: 'paused' }));
+        }
+        break;
+      case 'emergency-stop':
+        setBotActive(false);
+        setStats(prev => ({ ...prev, botStatus: 'stopped' }));
+        break;
+      case 'quick-buy':
+      case 'quick-sell':
+        // These would open quick order modals
+        break;
     }
   };
 
@@ -287,8 +330,15 @@ export const TradingDashboard = () => {
           </Card>
         </div>
 
+        {/* Global Command Palette */}
+        <GlobalCommandPalette 
+          onNavigate={handleNavigate}
+          onPlatformAction={handlePlatformAction}
+          onTradingAction={handleTradingAction}
+        />
+
         {/* Main Content */}
-        <Tabs defaultValue="trading" className="space-y-6">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <TabsList className="grid w-full grid-cols-10">
             <TabsTrigger value="trading">Trading</TabsTrigger>
             <TabsTrigger value="live-execution">Live Trading</TabsTrigger>
