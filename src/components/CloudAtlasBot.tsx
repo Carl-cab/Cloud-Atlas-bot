@@ -90,11 +90,14 @@ export const CloudAtlasBot = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
+      // Use maybeSingle to handle multiple or no rows gracefully
       const { data: config } = await supabase
         .from('bot_config')
         .select('*')
         .eq('user_id', user.id)
-        .single();
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
       if (config) {
         setBotStatus(prev => ({
@@ -102,50 +105,63 @@ export const CloudAtlasBot = () => {
           isActive: config.is_active && !emergencyStop,
           balance: config.capital_cad
         }));
-      }
 
-      // Load real daily P&L data
-      const today = new Date().toISOString().split('T')[0];
-      const { data: pnl } = await supabase
-        .from('daily_pnl')
-        .select('*')
-        .eq('user_id', user.id)
-        .eq('date', today)
-        .single();
+        // Load real daily P&L data
+        const today = new Date().toISOString().split('T')[0];
+        const { data: pnl } = await supabase
+          .from('daily_pnl')
+          .select('*')
+          .eq('user_id', user.id)
+          .eq('date', today)
+          .maybeSingle();
 
-      if (pnl) {
-        setBotStatus(prev => ({
-          ...prev,
-          totalPnL: pnl.total_pnl,
-          dailyPnL: pnl.total_pnl,
-          winRate: pnl.win_rate / 100 // Convert to decimal
+        if (pnl) {
+          setBotStatus(prev => ({
+            ...prev,
+            totalPnL: pnl.total_pnl,
+            dailyPnL: pnl.total_pnl,
+            winRate: pnl.win_rate / 100 // Convert to decimal
+          }));
+        }
+
+        // Load active positions for active trades count
+        const { data: positions } = await supabase
+          .from('trading_positions')
+          .select('*')
+          .eq('user_id', user.id)
+          .eq('status', 'open');
+
+        if (positions && config.capital_cad) {
+          const totalRiskUsed = positions.reduce((sum, pos) => sum + (pos.risk_amount || 0), 0);
+          setBotStatus(prev => ({
+            ...prev,
+            activeTrades: positions.length,
+            riskUsed: (totalRiskUsed / config.capital_cad) * 100 // Convert to percentage
+          }));
+        }
+
+        // Update trading metrics with real-time fluctuations
+        setTradingMetrics(prev => ({
+          profitOptimization: Math.max(70, Math.min(95, prev.profitOptimization + (Math.random() - 0.5) * 2)),
+          riskControl: Math.max(80, Math.min(98, prev.riskControl + (Math.random() - 0.5) * 1)),
+          marketStability: Math.max(60, Math.min(90, prev.marketStability + (Math.random() - 0.5) * 3)),
+          trendDetection: Math.max(75, Math.min(95, prev.trendDetection + (Math.random() - 0.5) * 2)),
+          timing: Math.max(85, Math.min(98, prev.timing + (Math.random() - 0.5) * 1))
         }));
+      } else {
+        console.log('No bot config found for user, creating default config...');
+        // Create default bot config if none exists
+        await supabase
+          .from('bot_config')
+          .insert({
+            user_id: user.id,
+            is_active: false,
+            capital_cad: 100.00,
+            risk_per_trade: 0.5,
+            daily_stop_loss: 2.0,
+            max_positions: 4
+          });
       }
-
-      // Load active positions for active trades count
-      const { data: positions } = await supabase
-        .from('trading_positions')
-        .select('*')
-        .eq('user_id', user.id)
-        .eq('status', 'open');
-
-      if (positions) {
-        const totalRiskUsed = positions.reduce((sum, pos) => sum + (pos.risk_amount || 0), 0);
-        setBotStatus(prev => ({
-          ...prev,
-          activeTrades: positions.length,
-          riskUsed: (totalRiskUsed / config.capital_cad) * 100 // Convert to percentage
-        }));
-      }
-
-      // Update trading metrics with real-time fluctuations
-      setTradingMetrics(prev => ({
-        profitOptimization: Math.max(70, Math.min(95, prev.profitOptimization + (Math.random() - 0.5) * 2)),
-        riskControl: Math.max(80, Math.min(98, prev.riskControl + (Math.random() - 0.5) * 1)),
-        marketStability: Math.max(60, Math.min(90, prev.marketStability + (Math.random() - 0.5) * 3)),
-        trendDetection: Math.max(75, Math.min(95, prev.trendDetection + (Math.random() - 0.5) * 2)),
-        timing: Math.max(85, Math.min(98, prev.timing + (Math.random() - 0.5) * 1))
-      }));
 
     } catch (error) {
       console.error('Error loading bot data:', error);
