@@ -94,13 +94,13 @@ export const CloudAtlasBot = () => {
         .from('bot_config')
         .select('*')
         .eq('user_id', user.id)
-        .single();
+        .maybeSingle();
 
       if (config) {
         setBotStatus(prev => ({
           ...prev,
           isActive: config.is_active && !emergencyStop,
-          balance: config.capital_cad
+          balance: config.capital_cad || 100
         }));
       }
 
@@ -111,7 +111,7 @@ export const CloudAtlasBot = () => {
         .select('*')
         .eq('user_id', user.id)
         .eq('date', today)
-        .single();
+        .maybeSingle();
 
       if (pnl) {
         setBotStatus(prev => ({
@@ -129,12 +129,12 @@ export const CloudAtlasBot = () => {
         .eq('user_id', user.id)
         .eq('status', 'open');
 
-      if (positions) {
+      if (positions && config) {
         const totalRiskUsed = positions.reduce((sum, pos) => sum + (pos.risk_amount || 0), 0);
         setBotStatus(prev => ({
           ...prev,
           activeTrades: positions.length,
-          riskUsed: (totalRiskUsed / config.capital_cad) * 100 // Convert to percentage
+          riskUsed: (totalRiskUsed / (config.capital_cad || 100)) * 100 // Convert to percentage
         }));
       }
 
