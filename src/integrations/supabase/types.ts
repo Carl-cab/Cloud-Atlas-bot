@@ -19,34 +19,73 @@ export type Database = {
           api_key: string
           api_secret: string
           created_at: string | null
+          encryption_key_id: string | null
           exchange: string
           id: string
           is_active: boolean | null
+          last_used: string | null
           passphrase: string | null
           updated_at: string | null
+          usage_count: number | null
           user_id: string
         }
         Insert: {
           api_key: string
           api_secret: string
           created_at?: string | null
+          encryption_key_id?: string | null
           exchange: string
           id?: string
           is_active?: boolean | null
+          last_used?: string | null
           passphrase?: string | null
           updated_at?: string | null
+          usage_count?: number | null
           user_id: string
         }
         Update: {
           api_key?: string
           api_secret?: string
           created_at?: string | null
+          encryption_key_id?: string | null
           exchange?: string
           id?: string
           is_active?: boolean | null
+          last_used?: string | null
           passphrase?: string | null
           updated_at?: string | null
+          usage_count?: number | null
           user_id?: string
+        }
+        Relationships: []
+      }
+      api_rate_limits: {
+        Row: {
+          created_at: string | null
+          endpoint: string
+          id: string
+          last_request: string | null
+          request_count: number | null
+          user_id: string
+          window_start: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          endpoint: string
+          id?: string
+          last_request?: string | null
+          request_count?: number | null
+          user_id: string
+          window_start?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          endpoint?: string
+          id?: string
+          last_request?: string | null
+          request_count?: number | null
+          user_id?: string
+          window_start?: string | null
         }
         Relationships: []
       }
@@ -60,9 +99,14 @@ export type Database = {
           max_positions: number
           mode: string
           notification_enabled: boolean
+          paper_trading_balance: number | null
+          paper_trading_fees: number | null
           retraining_frequency: string
           risk_per_trade: number
+          stop_loss_enabled: boolean | null
           symbols: string[]
+          take_profit_enabled: boolean | null
+          trailing_stop_enabled: boolean | null
           updated_at: string
           user_id: string
         }
@@ -75,9 +119,14 @@ export type Database = {
           max_positions?: number
           mode?: string
           notification_enabled?: boolean
+          paper_trading_balance?: number | null
+          paper_trading_fees?: number | null
           retraining_frequency?: string
           risk_per_trade?: number
+          stop_loss_enabled?: boolean | null
           symbols?: string[]
+          take_profit_enabled?: boolean | null
+          trailing_stop_enabled?: boolean | null
           updated_at?: string
           user_id: string
         }
@@ -90,9 +139,14 @@ export type Database = {
           max_positions?: number
           mode?: string
           notification_enabled?: boolean
+          paper_trading_balance?: number | null
+          paper_trading_fees?: number | null
           retraining_frequency?: string
           risk_per_trade?: number
+          stop_loss_enabled?: boolean | null
           symbols?: string[]
+          take_profit_enabled?: boolean | null
+          trailing_stop_enabled?: boolean | null
           updated_at?: string
           user_id?: string
         }
@@ -244,6 +298,42 @@ export type Database = {
           timeframe?: string
           timestamp?: string
           volume?: number
+        }
+        Relationships: []
+      }
+      market_data_cache: {
+        Row: {
+          ask: number | null
+          bid: number | null
+          change_24h: number | null
+          exchange: string
+          id: string
+          price: number
+          symbol: string
+          timestamp: string | null
+          volume_24h: number | null
+        }
+        Insert: {
+          ask?: number | null
+          bid?: number | null
+          change_24h?: number | null
+          exchange: string
+          id?: string
+          price: number
+          symbol: string
+          timestamp?: string | null
+          volume_24h?: number | null
+        }
+        Update: {
+          ask?: number | null
+          bid?: number | null
+          change_24h?: number | null
+          exchange?: string
+          id?: string
+          price?: number
+          symbol?: string
+          timestamp?: string | null
+          volume_24h?: number | null
         }
         Relationships: []
       }
@@ -460,6 +550,48 @@ export type Database = {
         }
         Relationships: []
       }
+      notification_queue: {
+        Row: {
+          created_at: string | null
+          data: Json | null
+          id: string
+          message: string
+          priority: string | null
+          read: boolean | null
+          sent: boolean | null
+          sent_at: string | null
+          title: string
+          type: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          data?: Json | null
+          id?: string
+          message: string
+          priority?: string | null
+          read?: boolean | null
+          sent?: boolean | null
+          sent_at?: string | null
+          title: string
+          type: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          data?: Json | null
+          id?: string
+          message?: string
+          priority?: string | null
+          read?: boolean | null
+          sent?: boolean | null
+          sent_at?: string | null
+          title?: string
+          type?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       notification_settings: {
         Row: {
           created_at: string
@@ -504,6 +636,80 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      order_management: {
+        Row: {
+          cancelled_at: string | null
+          created_at: string | null
+          exchange_order_id: string | null
+          executed_at: string | null
+          filled_quantity: number | null
+          id: string
+          order_type: string
+          parent_order_id: string | null
+          position_id: string | null
+          price: number | null
+          quantity: number
+          side: string
+          status: string | null
+          stop_price: number | null
+          symbol: string
+          take_profit_price: number | null
+          time_in_force: string | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          cancelled_at?: string | null
+          created_at?: string | null
+          exchange_order_id?: string | null
+          executed_at?: string | null
+          filled_quantity?: number | null
+          id?: string
+          order_type: string
+          parent_order_id?: string | null
+          position_id?: string | null
+          price?: number | null
+          quantity: number
+          side: string
+          status?: string | null
+          stop_price?: number | null
+          symbol: string
+          take_profit_price?: number | null
+          time_in_force?: string | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          cancelled_at?: string | null
+          created_at?: string | null
+          exchange_order_id?: string | null
+          executed_at?: string | null
+          filled_quantity?: number | null
+          id?: string
+          order_type?: string
+          parent_order_id?: string | null
+          position_id?: string | null
+          price?: number | null
+          quantity?: number
+          side?: string
+          status?: string | null
+          stop_price?: number | null
+          symbol?: string
+          take_profit_price?: number | null
+          time_in_force?: string | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_management_position_id_fkey"
+            columns: ["position_id"]
+            isOneToOne: false
+            referencedRelation: "trading_positions"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       position_sizing_calculations: {
         Row: {
@@ -691,6 +897,42 @@ export type Database = {
         }
         Relationships: []
       }
+      security_audit_log: {
+        Row: {
+          action: string
+          created_at: string | null
+          id: string
+          ip_address: unknown | null
+          metadata: Json | null
+          resource: string | null
+          success: boolean | null
+          user_agent: string | null
+          user_id: string | null
+        }
+        Insert: {
+          action: string
+          created_at?: string | null
+          id?: string
+          ip_address?: unknown | null
+          metadata?: Json | null
+          resource?: string | null
+          success?: boolean | null
+          user_agent?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          action?: string
+          created_at?: string | null
+          id?: string
+          ip_address?: unknown | null
+          metadata?: Json | null
+          resource?: string | null
+          success?: boolean | null
+          user_agent?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       strategy_signals: {
         Row: {
           confidence: number
@@ -793,6 +1035,7 @@ export type Database = {
           created_at: string
           current_price: number | null
           entry_price: number
+          exit_reason: string | null
           id: string
           opened_at: string
           quantity: number
@@ -800,9 +1043,13 @@ export type Database = {
           side: string
           status: string
           stop_loss: number | null
+          stop_loss_type: string | null
           strategy_used: string
           symbol: string
           take_profit: number | null
+          take_profit_type: string | null
+          trailing_amount: number | null
+          trailing_stop: boolean | null
           unrealized_pnl: number | null
           user_id: string
         }
@@ -811,6 +1058,7 @@ export type Database = {
           created_at?: string
           current_price?: number | null
           entry_price: number
+          exit_reason?: string | null
           id?: string
           opened_at?: string
           quantity: number
@@ -818,9 +1066,13 @@ export type Database = {
           side: string
           status?: string
           stop_loss?: number | null
+          stop_loss_type?: string | null
           strategy_used: string
           symbol: string
           take_profit?: number | null
+          take_profit_type?: string | null
+          trailing_amount?: number | null
+          trailing_stop?: boolean | null
           unrealized_pnl?: number | null
           user_id: string
         }
@@ -829,6 +1081,7 @@ export type Database = {
           created_at?: string
           current_price?: number | null
           entry_price?: number
+          exit_reason?: string | null
           id?: string
           opened_at?: string
           quantity?: number
@@ -836,9 +1089,13 @@ export type Database = {
           side?: string
           status?: string
           stop_loss?: number | null
+          stop_loss_type?: string | null
           strategy_used?: string
           symbol?: string
           take_profit?: number | null
+          take_profit_type?: string | null
+          trailing_amount?: number | null
+          trailing_stop?: boolean | null
           unrealized_pnl?: number | null
           user_id?: string
         }
@@ -882,6 +1139,15 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      check_rate_limit: {
+        Args: {
+          p_user_id: string
+          p_endpoint: string
+          p_max_requests?: number
+          p_window_minutes?: number
+        }
+        Returns: boolean
+      }
       get_notification_settings: {
         Args: { p_user_id: string }
         Returns: {
@@ -894,6 +1160,18 @@ export type Database = {
           email_address: string
           telegram_chat_id: string
         }[]
+      }
+      log_security_event: {
+        Args: {
+          p_user_id: string
+          p_action: string
+          p_resource?: string
+          p_ip_address?: unknown
+          p_user_agent?: string
+          p_success?: boolean
+          p_metadata?: Json
+        }
+        Returns: undefined
       }
       log_trading_event: {
         Args: {
