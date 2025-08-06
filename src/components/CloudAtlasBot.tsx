@@ -76,7 +76,6 @@ export const CloudAtlasBot = () => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [emergencyStop, setEmergencyStop] = useState(false);
   
-  const { signOut } = useAuth();
   const { toast } = useToast();
 
   useEffect(() => {
@@ -87,13 +86,13 @@ export const CloudAtlasBot = () => {
 
   const loadBotData = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      // Use default user ID for demo mode
+      const userId = 'demo-user-id';
 
       const { data: config } = await supabase
         .from('bot_config')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
         .maybeSingle();
 
       if (config) {
@@ -109,7 +108,7 @@ export const CloudAtlasBot = () => {
       const { data: pnl } = await supabase
         .from('daily_pnl')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
         .eq('date', today)
         .maybeSingle();
 
@@ -126,7 +125,7 @@ export const CloudAtlasBot = () => {
       const { data: positions } = await supabase
         .from('trading_positions')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
         .eq('status', 'open');
 
       if (positions && config) {
@@ -163,13 +162,12 @@ export const CloudAtlasBot = () => {
     }
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      const userId = 'demo-user-id';
 
       await supabase
         .from('bot_config')
         .upsert({
-          user_id: user.id,
+          user_id: userId,
           is_active: !botStatus.isActive
         });
 
@@ -237,14 +235,13 @@ export const CloudAtlasBot = () => {
   const analyzeMarket = async () => {
     setIsAnalyzing(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      const userId = 'demo-user-id';
 
       const { data, error } = await supabase.functions.invoke('trading-bot', {
         body: {
           action: 'analyze_market',
           symbol: 'XBTUSD',
-          userId: user.id
+          userId: userId
         }
       });
 
@@ -324,14 +321,6 @@ export const CloudAtlasBot = () => {
             Live Terminal
           </Button>
           
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={signOut}
-          >
-            <LogOut className="w-4 h-4 mr-2" />
-            Sign Out
-          </Button>
           
           <Switch
             checked={botStatus.isActive && !emergencyStop}
