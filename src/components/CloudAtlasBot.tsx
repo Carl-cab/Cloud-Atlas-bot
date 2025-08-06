@@ -30,8 +30,11 @@ import { RegimeDetectionSystem } from './RegimeDetectionSystem';
 import { TradingEngines } from './TradingEngines';
 import { TestingDashboard } from './TestingDashboard';
 import { LiveTradingActivation } from './LiveTradingActivation';
+import { SecurityMonitor } from './SecurityMonitor';
+import { NotificationCenter } from './NotificationCenter';
+import { APIKeyManager } from './APIKeyManager';
+import { WebSocketManager } from './WebSocketManager';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 
 interface BotStatus {
@@ -86,8 +89,8 @@ export const CloudAtlasBot = () => {
 
   const loadBotData = async () => {
     try {
-      // Use default user ID for demo mode
-      const userId = 'demo-user-id';
+      // Use a fixed demo UUID to prevent database errors
+      const userId = '00000000-0000-0000-0000-000000000000';
 
       const { data: config } = await supabase
         .from('bot_config')
@@ -162,7 +165,7 @@ export const CloudAtlasBot = () => {
     }
 
     try {
-      const userId = 'demo-user-id';
+      const userId = '00000000-0000-0000-0000-000000000000';
 
       await supabase
         .from('bot_config')
@@ -235,7 +238,7 @@ export const CloudAtlasBot = () => {
   const analyzeMarket = async () => {
     setIsAnalyzing(true);
     try {
-      const userId = 'demo-user-id';
+      const userId = '00000000-0000-0000-0000-000000000000';
 
       const { data, error } = await supabase.functions.invoke('trading-bot', {
         body: {
@@ -479,7 +482,7 @@ export const CloudAtlasBot = () => {
 
       {/* Main Dashboard Tabs */}
       <Tabs defaultValue="platform" className="w-full">
-        <TabsList className="grid w-full grid-cols-9 bg-card/50 backdrop-blur-sm text-xs lg:text-sm">
+        <TabsList className="grid w-full grid-cols-6 lg:grid-cols-12 bg-card/50 backdrop-blur-sm text-xs lg:text-sm">
           <TabsTrigger value="platform" className="data-[state=active]:bg-gradient-primary">
             🏦 Platform
           </TabsTrigger>
@@ -506,6 +509,18 @@ export const CloudAtlasBot = () => {
           </TabsTrigger>
           <TabsTrigger value="live-activation" className="data-[state=active]:bg-gradient-primary">
             🚀 Go Live
+          </TabsTrigger>
+          <TabsTrigger value="security" className="data-[state=active]:bg-gradient-primary">
+            🔒 Security
+          </TabsTrigger>
+          <TabsTrigger value="notifications" className="data-[state=active]:bg-gradient-primary">
+            🔔 Alerts
+          </TabsTrigger>
+          <TabsTrigger value="apikeys" className="data-[state=active]:bg-gradient-primary">
+            🔑 API Keys
+          </TabsTrigger>
+          <TabsTrigger value="websockets" className="data-[state=active]:bg-gradient-primary">
+            📡 Live Data
           </TabsTrigger>
         </TabsList>
 
@@ -847,6 +862,22 @@ export const CloudAtlasBot = () => {
             isLiveMode={false}
             onLiveModeChange={(enabled) => console.log('Live mode:', enabled)}
           />
+        </TabsContent>
+
+        <TabsContent value="security" className="mt-6">
+          <SecurityMonitor />
+        </TabsContent>
+
+        <TabsContent value="notifications" className="mt-6">
+          <NotificationCenter />
+        </TabsContent>
+
+        <TabsContent value="apikeys" className="mt-6">
+          <APIKeyManager />
+        </TabsContent>
+
+        <TabsContent value="websockets" className="mt-6">
+          <WebSocketManager />
         </TabsContent>
       </Tabs>
     </div>
