@@ -34,6 +34,8 @@ import { SecurityMonitor } from './SecurityMonitor';
 import { NotificationCenter } from './NotificationCenter';
 import { APIKeyManager } from './APIKeyManager';
 import { WebSocketManager } from './WebSocketManager';
+import { EnhancedTradingInterface } from './EnhancedTradingInterface';
+import { RealTimeNotifications } from './RealTimeNotifications';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
@@ -482,7 +484,10 @@ export const CloudAtlasBot = () => {
 
       {/* Main Dashboard Tabs */}
       <Tabs defaultValue="platform" className="w-full">
-        <TabsList className="grid w-full grid-cols-6 lg:grid-cols-12 bg-card/50 backdrop-blur-sm text-xs lg:text-sm">
+        <TabsList className="grid w-full grid-cols-6 lg:grid-cols-13 bg-card/50 backdrop-blur-sm text-xs lg:text-sm">
+          <TabsTrigger value="enhanced-trading" className="data-[state=active]:bg-gradient-primary">
+            ⚡ Enhanced Trading
+          </TabsTrigger>
           <TabsTrigger value="platform" className="data-[state=active]:bg-gradient-primary">
             🏦 Platform
           </TabsTrigger>
@@ -514,7 +519,7 @@ export const CloudAtlasBot = () => {
             🔒 Security
           </TabsTrigger>
           <TabsTrigger value="notifications" className="data-[state=active]:bg-gradient-primary">
-            🔔 Alerts
+            🔔 Real-time Alerts
           </TabsTrigger>
           <TabsTrigger value="apikeys" className="data-[state=active]:bg-gradient-primary">
             🔑 API Keys
@@ -523,6 +528,10 @@ export const CloudAtlasBot = () => {
             📡 Live Data
           </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="enhanced-trading" className="space-y-4">
+          <EnhancedTradingInterface />
+        </TabsContent>
 
         <TabsContent value="platform" className="space-y-4">
           <div className="flex items-center justify-between">
@@ -869,7 +878,7 @@ export const CloudAtlasBot = () => {
         </TabsContent>
 
         <TabsContent value="notifications" className="mt-6">
-          <NotificationCenter />
+          <RealTimeNotifications />
         </TabsContent>
 
         <TabsContent value="apikeys" className="mt-6">
