@@ -36,6 +36,7 @@ import { APIKeyManager } from './APIKeyManager';
 import { WebSocketManager } from './WebSocketManager';
 import { EnhancedTradingInterface } from './EnhancedTradingInterface';
 import { RealTimeNotifications } from './RealTimeNotifications';
+import { SystemHealthMonitor } from './SystemHealthMonitor';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
