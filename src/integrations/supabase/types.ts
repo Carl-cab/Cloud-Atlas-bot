@@ -14,6 +14,42 @@ export type Database = {
   }
   public: {
     Tables: {
+      api_keys: {
+        Row: {
+          api_key: string
+          api_secret: string
+          created_at: string | null
+          exchange: string
+          id: string
+          is_active: boolean | null
+          passphrase: string | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          api_key: string
+          api_secret: string
+          created_at?: string | null
+          exchange: string
+          id?: string
+          is_active?: boolean | null
+          passphrase?: string | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          api_key?: string
+          api_secret?: string
+          created_at?: string | null
+          exchange?: string
+          id?: string
+          is_active?: boolean | null
+          passphrase?: string | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       bot_config: {
         Row: {
           capital_cad: number
@@ -694,6 +730,63 @@ export type Database = {
         }
         Relationships: []
       }
+      system_health: {
+        Row: {
+          checked_at: string | null
+          error_message: string | null
+          id: string
+          response_time_ms: number | null
+          service_name: string
+          status: string
+        }
+        Insert: {
+          checked_at?: string | null
+          error_message?: string | null
+          id?: string
+          response_time_ms?: number | null
+          service_name: string
+          status: string
+        }
+        Update: {
+          checked_at?: string | null
+          error_message?: string | null
+          id?: string
+          response_time_ms?: number | null
+          service_name?: string
+          status?: string
+        }
+        Relationships: []
+      }
+      trading_logs: {
+        Row: {
+          category: string
+          created_at: string | null
+          id: string
+          level: string
+          message: string
+          metadata: Json | null
+          user_id: string
+        }
+        Insert: {
+          category: string
+          created_at?: string | null
+          id?: string
+          level: string
+          message: string
+          metadata?: Json | null
+          user_id: string
+        }
+        Update: {
+          category?: string
+          created_at?: string | null
+          id?: string
+          level?: string
+          message?: string
+          metadata?: Json | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       trading_positions: {
         Row: {
           closed_at: string | null
@@ -751,6 +844,39 @@ export type Database = {
         }
         Relationships: []
       }
+      websocket_connections: {
+        Row: {
+          connection_type: string
+          created_at: string | null
+          exchange: string
+          id: string
+          is_active: boolean | null
+          last_heartbeat: string | null
+          symbol: string
+          user_id: string
+        }
+        Insert: {
+          connection_type: string
+          created_at?: string | null
+          exchange: string
+          id?: string
+          is_active?: boolean | null
+          last_heartbeat?: string | null
+          symbol: string
+          user_id: string
+        }
+        Update: {
+          connection_type?: string
+          created_at?: string | null
+          exchange?: string
+          id?: string
+          is_active?: boolean | null
+          last_heartbeat?: string | null
+          symbol?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -768,6 +894,16 @@ export type Database = {
           email_address: string
           telegram_chat_id: string
         }[]
+      }
+      log_trading_event: {
+        Args: {
+          p_user_id: string
+          p_level: string
+          p_category: string
+          p_message: string
+          p_metadata?: Json
+        }
+        Returns: undefined
       }
       upsert_notification_settings: {
         Args: {
