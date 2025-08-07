@@ -62,10 +62,19 @@ export const BasicNotifications = () => {
         {
           event: 'INSERT',
           schema: 'public',
-          table: 'notifications'
+          table: 'notification_queue'
         },
         (payload) => {
-          const newNotification = payload.new as Notification;
+          const newItem = payload.new;
+          const newNotification: Notification = {
+            id: newItem.id,
+            type: newItem.type as 'price_alert' | 'trade_execution' | 'system' | 'market_regime',
+            title: newItem.title,
+            message: newItem.message,
+            severity: (newItem.priority === 'high' ? 'error' : newItem.priority === 'medium' ? 'warning' : 'info') as 'info' | 'warning' | 'success' | 'error',
+            timestamp: newItem.created_at,
+            read: newItem.read || false
+          };
           setNotifications(prev => [newNotification, ...prev]);
           setUnreadCount(prev => prev + 1);
           
@@ -91,16 +100,27 @@ export const BasicNotifications = () => {
       if (!user) return;
 
       const { data, error } = await supabase
-        .from('notifications')
+        .from('notification_queue')
         .select('*')
         .eq('user_id', user.id)
-        .order('timestamp', { ascending: false })
+        .order('created_at', { ascending: false })
         .limit(50);
 
       if (error) throw error;
 
-      setNotifications(data || []);
-      setUnreadCount(data?.filter(n => !n.read).length || 0);
+      // Transform notification_queue data to match our interface
+      const transformedNotifications: Notification[] = (data || []).map(item => ({
+        id: item.id,
+        type: item.type as 'price_alert' | 'trade_execution' | 'system' | 'market_regime',
+        title: item.title,
+        message: item.message,
+        severity: (item.priority === 'high' ? 'error' : item.priority === 'medium' ? 'warning' : 'info') as 'info' | 'warning' | 'success' | 'error',
+        timestamp: item.created_at,
+        read: item.read || false
+      }));
+
+      setNotifications(transformedNotifications);
+      setUnreadCount(transformedNotifications.filter(n => !n.read).length);
       setIsLoading(false);
     } catch (error) {
       console.error('Error loading notifications:', error);
@@ -114,13 +134,19 @@ export const BasicNotifications = () => {
       if (!user) return;
 
       const { data, error } = await supabase
-        .from('user_settings')
-        .select('notification_settings')
+        .from('notification_settings')
+        .select('*')
         .eq('user_id', user.id)
-        .single();
+        .maybeSingle();
 
-      if (data?.notification_settings) {
-        setSettings(data.notification_settings);
+      if (data) {
+        setSettings({
+          price_alerts: data.trade_alerts || true,
+          trade_executions: data.trade_alerts || true,
+          system_notifications: true,
+          market_regime_changes: true,
+          email_notifications: data.email_enabled || false
+        });
       }
     } catch (error) {
       console.error('Error loading settings:', error);
@@ -235,12 +261,23 @@ export const BasicNotifications = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      await supabase
-        .from('user_settings')
-        .upsert({
-          user_id: user.id,
-          notification_settings: newSettings
-        });
+      // Map to existing notification_settings structure
+      const mappedSettings = {
+        telegram_enabled: false,
+        email_enabled: newSettings.email_notifications,
+        daily_reports: newSettings.system_notifications,
+        trade_alerts: newSettings.trade_executions || newSettings.price_alerts,
+        risk_alerts: newSettings.system_notifications,
+        performance_summary: newSettings.system_notifications
+      };
+
+      await supabase.functions.invoke('notification-engine', {
+        body: {
+          action: 'update_settings',
+          userId: user.id,
+          settings: mappedSettings
+        }
+      });
 
       toast({
         title: 'Settings Updated',
