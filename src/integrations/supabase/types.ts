@@ -1148,6 +1148,16 @@ export type Database = {
         }
         Returns: boolean
       }
+      create_system_alert: {
+        Args: {
+          p_alert_type: string
+          p_severity: string
+          p_message: string
+          p_metadata?: Json
+          p_user_id?: string
+        }
+        Returns: string
+      }
       get_notification_settings: {
         Args: { p_user_id: string }
         Returns: {
@@ -1173,6 +1183,19 @@ export type Database = {
         }
         Returns: undefined
       }
+      log_trade_execution: {
+        Args: {
+          p_user_id: string
+          p_symbol: string
+          p_side: string
+          p_quantity: number
+          p_price: number
+          p_order_type: string
+          p_status: string
+          p_metadata?: Json
+        }
+        Returns: undefined
+      }
       log_trading_event: {
         Args: {
           p_user_id: string
@@ -1180,6 +1203,15 @@ export type Database = {
           p_category: string
           p_message: string
           p_metadata?: Json
+        }
+        Returns: undefined
+      }
+      record_performance_metric: {
+        Args: {
+          p_metric_name: string
+          p_metric_value: number
+          p_unit?: string
+          p_tags?: Json
         }
         Returns: undefined
       }
