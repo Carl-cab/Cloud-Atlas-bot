@@ -22,6 +22,20 @@ vi.mock('@/integrations/supabase/client', () => ({
               capital_cad: 10000
             }, 
             error: null 
+          })),
+          maybeSingle: vi.fn(() => Promise.resolve({ 
+            data: { 
+              id: 'test-config',
+              user_id: 'test-user',
+              mode: 'paper',
+              is_active: false,
+              risk_per_trade: 1.0,
+              daily_stop_loss: 5.0,
+              max_positions: 3,
+              symbols: ['BTCUSD', 'ETHUSD'],
+              capital_cad: 10000
+            }, 
+            error: null 
           }))
         })),
         order: vi.fn(() => ({
@@ -79,19 +93,19 @@ describe('Trading Workflow Integration', () => {
     const user = userEvent.setup();
     render(<CloudAtlasBot />);
     
-    // Step 1: Navigate to Trading tab
-    const tradingTab = screen.getByText('Trading');
+    // Step 1: Navigate to Enhanced Trading tab
+    const tradingTab = screen.getByText('Enhanced Trading');
     await user.click(tradingTab);
     
     await waitFor(() => {
-      expect(screen.getByText('Trading Interface')).toBeInTheDocument();
+      expect(screen.getByText('Enhanced Trading Interface')).toBeInTheDocument();
     });
     
     // Step 2: Configure a trade
     const symbolSelect = screen.getByRole('combobox');
     await user.click(symbolSelect);
     
-    await waitFor(() => {
+    await waitFor(async () => {
       const btcOption = screen.getByText('BTC/USD');
       await user.click(btcOption);
     });
@@ -119,12 +133,12 @@ describe('Trading Workflow Integration', () => {
     const user = userEvent.setup();
     render(<CloudAtlasBot />);
     
-    // Navigate to Trading
-    const tradingTab = screen.getByText('Trading');
+    // Navigate to Enhanced Trading
+    const tradingTab = screen.getByText('Enhanced Trading');
     await user.click(tradingTab);
     
     await waitFor(() => {
-      expect(screen.getByText('Trading Interface')).toBeInTheDocument();
+      expect(screen.getByText('Enhanced Trading Interface')).toBeInTheDocument();
     });
     
     // Try to place order with excessive risk
@@ -149,12 +163,12 @@ describe('Trading Workflow Integration', () => {
     const user = userEvent.setup();
     render(<CloudAtlasBot />);
     
-    // Navigate to Strategies tab
-    const strategiesTab = screen.getByText('Strategies');
-    await user.click(strategiesTab);
+    // Navigate to Engines tab
+    const enginesTab = screen.getByText('Engines');
+    await user.click(enginesTab);
     
     await waitFor(() => {
-      expect(screen.getByText('Trading Strategies')).toBeInTheDocument();
+      expect(screen.getByText('Trading Engines & ML')).toBeInTheDocument();
     });
     
     // Generate a signal
@@ -171,21 +185,21 @@ describe('Trading Workflow Integration', () => {
     const user = userEvent.setup();
     render(<CloudAtlasBot />);
     
-    // Navigate to System Health
-    const analyticsTab = screen.getByText('Analytics');
+    // Navigate to Analytics tab  
+    const analyticsTab = screen.getByText('Analysis');
     await user.click(analyticsTab);
     
     await waitFor(() => {
-      expect(screen.getByText('System Health Monitor')).toBeInTheDocument();
+      expect(screen.getByText('AI-Powered Market Analysis')).toBeInTheDocument();
     });
     
-    // Run health check
-    const healthCheckButton = screen.getByText('Run Health Check');
-    await user.click(healthCheckButton);
+    // Run market analysis
+    const analysisButton = screen.getByText('Deep Analysis');
+    await user.click(analysisButton);
     
-    // Verify health check completion
+    // Verify analysis completion
     await waitFor(() => {
-      expect(screen.getByText(/Health Check Complete/)).toBeInTheDocument();
+      expect(screen.getByText(/Market Analysis Complete/)).toBeInTheDocument();
     });
   });
 });

@@ -9,7 +9,8 @@ vi.mock('@/integrations/supabase/client', () => ({
     from: vi.fn(() => ({
       select: vi.fn(() => ({
         eq: vi.fn(() => ({
-          single: vi.fn(() => Promise.resolve({ data: null, error: null }))
+          single: vi.fn(() => Promise.resolve({ data: null, error: null })),
+          maybeSingle: vi.fn(() => Promise.resolve({ data: null, error: null }))
         })),
         order: vi.fn(() => ({
           limit: vi.fn(() => Promise.resolve({ data: [], error: null }))
@@ -42,35 +43,35 @@ vi.mock('@/hooks/useAuth', () => ({
 describe('CloudAtlasBot', () => {
   it('renders without crashing', () => {
     render(<CloudAtlasBot />);
-    expect(screen.getByText('Cloud Atlas Bot')).toBeInTheDocument();
+    expect(screen.getByText('CloudAtlasBot')).toBeInTheDocument();
   });
 
   it('displays navigation tabs correctly', () => {
     render(<CloudAtlasBot />);
     
-    expect(screen.getByText('Dashboard')).toBeInTheDocument();
-    expect(screen.getByText('Trading')).toBeInTheDocument();
-    expect(screen.getByText('Strategies')).toBeInTheDocument();
-    expect(screen.getByText('Analytics')).toBeInTheDocument();
+    expect(screen.getByText('Enhanced Trading')).toBeInTheDocument();
+    expect(screen.getByText('Platform')).toBeInTheDocument();
+    expect(screen.getByText('Testing')).toBeInTheDocument();
+    expect(screen.getByText('Analysis')).toBeInTheDocument();
   });
 
   it('allows tab navigation', async () => {
     const user = userEvent.setup();
     render(<CloudAtlasBot />);
     
-    const tradingTab = screen.getByText('Trading');
-    await user.click(tradingTab);
+    const platformTab = screen.getByText('Platform');
+    await user.click(platformTab);
     
     await waitFor(() => {
-      expect(screen.getByText('Trading Interface')).toBeInTheDocument();
+      expect(screen.getByText('Platform Selection System')).toBeInTheDocument();
     });
   });
 
   it('displays trading metrics', () => {
     render(<CloudAtlasBot />);
     
-    expect(screen.getByText('Total Portfolio Value')).toBeInTheDocument();
+    expect(screen.getByText('Balance')).toBeInTheDocument();
     expect(screen.getByText('Daily P&L')).toBeInTheDocument();
-    expect(screen.getByText('Active Positions')).toBeInTheDocument();
+    expect(screen.getByText('Active Trades')).toBeInTheDocument();
   });
 });
