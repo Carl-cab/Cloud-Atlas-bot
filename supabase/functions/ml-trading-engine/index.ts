@@ -1,6 +1,7 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { applyRateLimit, rateLimitConfigs } from '../_shared/rateLimiter.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -224,6 +225,12 @@ class MLTradingEngine {
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // Apply rate limiting for API endpoints
+  const rateLimitResponse = await applyRateLimit(req, rateLimitConfigs.api);
+  if (rateLimitResponse) {
+    return rateLimitResponse;
   }
 
   try {

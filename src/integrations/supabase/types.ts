@@ -783,6 +783,33 @@ export type Database = {
         }
         Relationships: []
       }
+      rate_limit_entries: {
+        Row: {
+          created_at: string
+          id: string
+          ip_address: string | null
+          key: string
+          timestamp: number
+          user_agent: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          ip_address?: string | null
+          key: string
+          timestamp: number
+          user_agent?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          ip_address?: string | null
+          key?: string
+          timestamp?: number
+          user_agent?: string | null
+        }
+        Relationships: []
+      }
       risk_events: {
         Row: {
           actions_taken: string[] | null
