@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, Suspense, lazy } from "react";
 import { RealTimeTradingDashboard } from "@/components/RealTimeTradingDashboard";
 import { WebSocketManager } from "@/components/WebSocketManager";
 import { MarketAnalysis } from "@/components/MarketAnalysis";
@@ -11,13 +11,24 @@ import { BasicNotifications } from "@/components/BasicNotifications";
 import { GlobalCommandPalette } from "@/components/GlobalCommandPalette";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/hooks/useAuth";
+import { usePerformanceMonitor } from "@/hooks/usePerformanceMonitor";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { TrendingUp, BarChart3, Shield, Bell, Activity, Settings } from "lucide-react";
+import { TrendingUp, BarChart3, Shield, Bell, Activity, Settings, Zap } from "lucide-react";
+
+// Lazy load heavy components for better performance
+const AdvancedNotifications = lazy(() => import("@/components/AdvancedNotifications").then(module => ({ default: module.AdvancedNotifications })));
+const PerformanceOptimizer = lazy(() => import("@/components/PerformanceOptimizer").then(module => ({ default: module.PerformanceOptimizer })));
 
 const Index = () => {
   const { user, signOut } = useAuth();
   const [selectedPlatform, setSelectedPlatform] = useState("bybit");
+  const { performanceData, markMilestone } = usePerformanceMonitor();
+
+  // Mark performance milestone when component mounts
+  React.useEffect(() => {
+    markMilestone('index-page-load');
+  }, [markMilestone]);
 
   if (!user) {
     return (
@@ -73,7 +84,7 @@ const Index = () => {
 
       <div className="container mx-auto px-4 py-6">
         <Tabs defaultValue="dashboard" className="w-full">
-          <TabsList className="grid w-full grid-cols-7">
+          <TabsList className="grid w-full grid-cols-8">
             <TabsTrigger value="dashboard" className="flex items-center gap-2">
               <Activity className="h-4 w-4" />
               Dashboard
@@ -101,6 +112,10 @@ const Index = () => {
             <TabsTrigger value="notifications" className="flex items-center gap-2">
               <Bell className="h-4 w-4" />
               Alerts
+            </TabsTrigger>
+            <TabsTrigger value="performance" className="flex items-center gap-2">
+              <Zap className="h-4 w-4" />
+              Performance
             </TabsTrigger>
           </TabsList>
 
@@ -132,6 +147,33 @@ const Index = () => {
           <TabsContent value="notifications" className="space-y-4">
             <BasicNotifications />
             <NotificationCenter />
+            <Suspense fallback={
+              <Card>
+                <CardContent className="p-6">
+                  <div className="animate-pulse space-y-4">
+                    <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+                    <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+                  </div>
+                </CardContent>
+              </Card>
+            }>
+              <AdvancedNotifications />
+            </Suspense>
+          </TabsContent>
+
+          <TabsContent value="performance" className="space-y-4">
+            <Suspense fallback={
+              <Card>
+                <CardContent className="p-6">
+                  <div className="animate-pulse space-y-4">
+                    <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+                    <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+                  </div>
+                </CardContent>
+              </Card>
+            }>
+              <PerformanceOptimizer />
+            </Suspense>
           </TabsContent>
         </Tabs>
       </div>
