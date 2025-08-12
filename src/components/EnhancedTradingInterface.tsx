@@ -82,20 +82,24 @@ export const EnhancedTradingInterface = () => {
 
   const loadTradingConfig = async () => {
     try {
-      const userId = '00000000-0000-0000-0000-000000000000';
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        console.log("User not authenticated");
+        return;
+      }
       
       // Load bot config
       const { data: botConfig } = await supabase
         .from('bot_config')
         .select('*')
-        .eq('user_id', userId)
+        .eq('user_id', user.id)
         .single();
 
       // Load risk settings
       const { data: riskSettings } = await supabase
         .from('risk_settings')
         .select('*')
-        .eq('user_id', userId)
+        .eq('user_id', user.id)
         .single();
 
       if (botConfig && riskSettings) {
@@ -131,8 +135,11 @@ export const EnhancedTradingInterface = () => {
     }
   };
 
-  const setupRealTimeUpdates = () => {
+  const setupRealTimeUpdates = async () => {
     setConnectionStatus('connecting');
+    
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
     
     // Subscribe to market data updates
     const marketDataChannel = supabase
@@ -165,7 +172,7 @@ export const EnhancedTradingInterface = () => {
       .on('postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'notification_queue' },
         (payload) => {
-          if (payload.new.user_id === '00000000-0000-0000-0000-000000000000') {
+          if (payload.new.user_id === user.id) {
             toast({
               title: payload.new.title,
               description: payload.new.message,
@@ -184,14 +191,18 @@ export const EnhancedTradingInterface = () => {
 
   const updateTradingConfig = async (newConfig: Partial<TradingConfig>) => {
     try {
-      const userId = '00000000-0000-0000-0000-000000000000';
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        console.log("User not authenticated");
+        return;
+      }
       const updatedConfig = { ...config, ...newConfig };
       
       // Update bot config
       await supabase
         .from('bot_config')
         .upsert({
-          user_id: userId,
+          user_id: user.id,
           mode: updatedConfig.mode,
           paper_trading_balance: updatedConfig.paperBalance,
           is_active: updatedConfig.autoTradingEnabled,
@@ -204,7 +215,7 @@ export const EnhancedTradingInterface = () => {
       await supabase
         .from('risk_settings')
         .upsert({
-          user_id: userId,
+          user_id: user.id,
           max_daily_loss: updatedConfig.riskManagement.maxDailyLoss,
           max_position_size: updatedConfig.riskManagement.maxPositionSize / 100,
           circuit_breaker_enabled: updatedConfig.riskManagement.circuitBreakerEnabled
@@ -271,10 +282,13 @@ export const EnhancedTradingInterface = () => {
 
   const testEmergencyStop = async () => {
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      
       const { data, error } = await supabase.functions.invoke('risk-management-engine', {
         body: {
           action: 'emergency_stop',
-          user_id: '00000000-0000-0000-0000-000000000000',
+          user_id: user.id,
           reason: 'Manual emergency stop test'
         }
       });

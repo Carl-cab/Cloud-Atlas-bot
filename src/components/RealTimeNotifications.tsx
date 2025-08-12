@@ -43,12 +43,16 @@ export const RealTimeNotifications = () => {
 
   const loadNotifications = async () => {
     try {
-      const userId = '00000000-0000-0000-0000-000000000000';
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        console.log("User not authenticated");
+        return;
+      }
       
       const { data, error } = await supabase
         .from('notification_queue')
         .select('*')
-        .eq('user_id', userId)
+        .eq('user_id', user.id)
         .order('created_at', { ascending: false })
         .limit(50);
 
@@ -63,8 +67,9 @@ export const RealTimeNotifications = () => {
     }
   };
 
-  const setupRealTimeSubscription = () => {
-    const userId = '00000000-0000-0000-0000-000000000000';
+  const setupRealTimeSubscription = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
     
     const channel = supabase
       .channel('user-notifications')
@@ -73,7 +78,7 @@ export const RealTimeNotifications = () => {
           event: 'INSERT', 
           schema: 'public', 
           table: 'notification_queue',
-          filter: `user_id=eq.${userId}`
+          filter: `user_id=eq.${user.id}`
         },
         (payload) => {
           const newNotification = payload.new as Notification;
@@ -124,12 +129,13 @@ export const RealTimeNotifications = () => {
 
   const markAllAsRead = async () => {
     try {
-      const userId = '00000000-0000-0000-0000-000000000000';
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
       
       const { error } = await supabase
         .from('notification_queue')
         .update({ read: true })
-        .eq('user_id', userId)
+        .eq('user_id', user.id)
         .eq('read', false);
 
       if (error) throw error;

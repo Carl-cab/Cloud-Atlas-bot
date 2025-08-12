@@ -58,12 +58,16 @@ export const APIKeyManager = () => {
 
   const loadAPIKeys = async () => {
     try {
-      const userId = '00000000-0000-0000-0000-000000000000';
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast({ title: "Authentication required", variant: "destructive" });
+        return;
+      }
       
       const { data, error } = await supabase
         .from('api_keys')
         .select('*')
-        .eq('user_id', userId)
+        .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -92,12 +96,16 @@ export const APIKeyManager = () => {
 
     setIsAdding(true);
     try {
-      const userId = '00000000-0000-0000-0000-000000000000';
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast({ title: "Authentication required", variant: "destructive" });
+        return;
+      }
       
       const { error } = await supabase
         .from('api_keys')
         .insert({
-          user_id: userId,
+          user_id: user.id,
           exchange: newKey.exchange,
           api_key: newKey.api_key,
           api_secret: newKey.api_secret,

@@ -60,13 +60,17 @@ export const NotificationCenter = () => {
 
   const loadNotificationData = async () => {
     try {
-      const userId = '00000000-0000-0000-0000-000000000000';
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        console.log("User not authenticated");
+        return;
+      }
 
       // Load notification settings
       const { data: settingsData } = await supabase
         .from('notification_settings')
         .select('*')
-        .eq('user_id', userId)
+        .eq('user_id', user.id)
         .maybeSingle();
 
       if (settingsData) {
@@ -86,7 +90,7 @@ export const NotificationCenter = () => {
       const { data: notificationsData } = await supabase
         .from('notification_logs')
         .select('*')
-        .eq('user_id', userId)
+        .eq('user_id', user.id)
         .order('created_at', { ascending: false })
         .limit(20);
 
@@ -104,12 +108,16 @@ export const NotificationCenter = () => {
   const saveSettings = async () => {
     setIsSaving(true);
     try {
-      const userId = '00000000-0000-0000-0000-000000000000';
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        console.log("User not authenticated");
+        return;
+      }
 
       await supabase
         .from('notification_settings')
         .upsert({
-          user_id: userId,
+          user_id: user.id,
           ...settings,
           updated_at: new Date().toISOString()
         });

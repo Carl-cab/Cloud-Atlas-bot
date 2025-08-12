@@ -92,13 +92,16 @@ export const CloudAtlasBot = () => {
 
   const loadBotData = async () => {
     try {
-      // Use a fixed demo UUID to prevent database errors
-      const userId = '00000000-0000-0000-0000-000000000000';
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        console.log("User not authenticated");
+        return;
+      }
 
       const { data: config } = await supabase
         .from('bot_config')
         .select('*')
-        .eq('user_id', userId)
+        .eq('user_id', user.id)
         .maybeSingle();
 
       if (config) {
@@ -114,7 +117,7 @@ export const CloudAtlasBot = () => {
       const { data: pnl } = await supabase
         .from('daily_pnl')
         .select('*')
-        .eq('user_id', userId)
+        .eq('user_id', user.id)
         .eq('date', today)
         .maybeSingle();
 
@@ -131,7 +134,7 @@ export const CloudAtlasBot = () => {
       const { data: positions } = await supabase
         .from('trading_positions')
         .select('*')
-        .eq('user_id', userId)
+        .eq('user_id', user.id)
         .eq('status', 'open');
 
       if (positions && config) {
@@ -168,12 +171,16 @@ export const CloudAtlasBot = () => {
     }
 
     try {
-      const userId = '00000000-0000-0000-0000-000000000000';
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        console.log("User not authenticated");
+        return;
+      }
 
       await supabase
         .from('bot_config')
         .upsert({
-          user_id: userId,
+          user_id: user.id,
           is_active: !botStatus.isActive
         });
 
@@ -241,13 +248,18 @@ export const CloudAtlasBot = () => {
   const analyzeMarket = async () => {
     setIsAnalyzing(true);
     try {
-      const userId = '00000000-0000-0000-0000-000000000000';
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        console.log("User not authenticated");
+        setIsAnalyzing(false);
+        return;
+      }
 
       const { data, error } = await supabase.functions.invoke('trading-bot', {
         body: {
           action: 'analyze_market',
           symbol: 'XBTUSD',
-          userId: userId
+          userId: user.id
         }
       });
 

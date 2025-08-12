@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { CheckCircle, DollarSign, Shield, AlertTriangle, Play } from "lucide-react";
 import { useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
 
 interface ProceedToLiveModalProps {
   open: boolean;
@@ -27,21 +28,14 @@ export const ProceedToLiveModal = ({ open, onOpenChange }: ProceedToLiveModalPro
     setConfirmed(true);
     try {
       // Start live trading through the live-trading-engine
-      const response = await fetch('https://asxcbnkpflgecqreegdd.supabase.co/functions/v1/live-trading-engine', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('supabase.auth.token')}`
-        },
-        body: JSON.stringify({
+      const { data, error } = await supabase.functions.invoke('live-trading-engine', {
+        body: {
           action: 'activate_live_trading',
           capital: 100
-        })
+        }
       });
       
-      if (!response.ok) throw new Error('Failed to activate live trading');
-      
-      const data = await response.json();
+      if (error) throw new Error('Failed to activate live trading');
       console.log('Live trading initiated with $100 CAD:', data);
       
       setTimeout(() => {
