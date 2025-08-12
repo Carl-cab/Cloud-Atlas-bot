@@ -262,14 +262,14 @@ export const usePerformanceMonitor = (config: PerformanceConfig = {
 };
 
 // HOC for tracking component render performance
-export const withPerformanceTracking = <P extends object>(
+export const withPerformanceTracking = <P extends Record<string, any>>(
   WrappedComponent: React.ComponentType<P>,
   componentName: string
 ) => {
-  return React.forwardRef<any, P>((props, ref) => {
+  const PerformanceTrackedComponent = (props: P) => {
     const { trackRenderTime, markMilestone } = usePerformanceMonitor();
     
-    useEffect(() => {
+    React.useEffect(() => {
       markMilestone(`${componentName}-mount-start`);
       const startTime = performance.now();
       
@@ -277,15 +277,19 @@ export const withPerformanceTracking = <P extends object>(
         trackRenderTime(componentName, startTime);
         markMilestone(`${componentName}-unmount`);
       };
-    }, [trackRenderTime]);
+    }, [trackRenderTime, markMilestone]);
 
     const renderStart = performance.now();
     
-    useEffect(() => {
+    React.useEffect(() => {
       const renderEnd = performance.now();
       trackRenderTime(`${componentName}-render`, renderStart);
     });
 
-    return <WrappedComponent {...props} ref={ref} />;
-  });
+    return <WrappedComponent {...props} />;
+  };
+
+  PerformanceTrackedComponent.displayName = `withPerformanceTracking(${componentName})`;
+  
+  return PerformanceTrackedComponent;
 };

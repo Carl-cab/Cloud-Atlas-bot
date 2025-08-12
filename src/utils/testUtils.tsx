@@ -3,7 +3,7 @@ import { render as rtlRender, RenderOptions } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from '@/hooks/useAuth';
 import { Toaster } from '@/components/ui/toaster';
-import { vi } from 'vitest';
+import { vi, expect } from 'vitest';
 
 // Create a custom render function that includes providers
 function createTestWrapper() {

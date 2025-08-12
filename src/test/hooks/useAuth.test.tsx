@@ -2,6 +2,20 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useAuth, AuthProvider } from '@/hooks/useAuth';
 
+// Mock the supabase client
+vi.mock('@/integrations/supabase/client', () => ({
+  supabase: {
+    auth: {
+      getUser: vi.fn(),
+      getSession: vi.fn(),
+      signInWithPassword: vi.fn(),
+      signUp: vi.fn(),
+      signOut: vi.fn(),
+      onAuthStateChange: vi.fn()
+    }
+  }
+}));
+
 describe('useAuth', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -23,8 +37,8 @@ describe('useAuth', () => {
   });
 
   it('handles sign in', async () => {
-    const mockSupabase = vi.mocked(await import('@/integrations/supabase/client')).supabase;
-    mockSupabase.auth.signInWithPassword.mockResolvedValue({
+    const { supabase } = await import('@/integrations/supabase/client');
+    vi.mocked(supabase.auth.signInWithPassword).mockResolvedValue({
       data: { user: null, session: null },
       error: null
     });
@@ -42,8 +56,8 @@ describe('useAuth', () => {
   });
 
   it('handles sign up', async () => {
-    const mockSupabase = vi.mocked(await import('@/integrations/supabase/client')).supabase;
-    mockSupabase.auth.signUp.mockResolvedValue({
+    const { supabase } = await import('@/integrations/supabase/client');
+    vi.mocked(supabase.auth.signUp).mockResolvedValue({
       data: { user: null, session: null },
       error: null
     });
