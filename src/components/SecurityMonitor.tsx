@@ -1,307 +1,248 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Shield, Eye, AlertTriangle, CheckCircle, X, Key, Database, Globe } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Shield, AlertTriangle, CheckCircle, Clock, Activity } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
-interface SecurityAlert {
+interface SecurityEvent {
   id: string;
-  type: 'API_KEY' | 'DATABASE' | 'NETWORK' | 'AUTH';
-  severity: 'low' | 'medium' | 'high' | 'critical';
-  message: string;
-  timestamp: Date;
-  resolved: boolean;
+  action: string;
+  resource?: string;
+  success: boolean;
+  created_at: string;
+  metadata?: any;
 }
 
-interface SystemHealth {
-  service: string;
-  status: 'healthy' | 'degraded' | 'down';
-  response_time?: number;
-  last_check: Date;
+interface APIKeyAudit {
+  id: string;
+  action: string;
+  exchange?: string;
+  success: boolean;
+  created_at: string;
+  details?: any;
 }
 
 export const SecurityMonitor = () => {
-  const [alerts, setAlerts] = useState<SecurityAlert[]>([]);
-  const [systemHealth, setSystemHealth] = useState<SystemHealth[]>([]);
+  const [securityEvents, setSecurityEvents] = useState<SecurityEvent[]>([]);
+  const [apiKeyAudits, setApiKeyAudits] = useState<APIKeyAudit[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
 
   useEffect(() => {
     loadSecurityData();
-    const interval = setInterval(loadSecurityData, 30000); // Check every 30 seconds
-    return () => clearInterval(interval);
-  }, []);
+    
+    // Set up real-time monitoring for security events
+    const eventChannel = supabase
+      .channel('security_events')
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'security_audit_log',
+        filter: `user_id=eq.${supabase.auth.getUser().then(r => r.data.user?.id)}`
+      }, (payload) => {
+        setSecurityEvents(prev => [payload.new as SecurityEvent, ...prev.slice(0, 9)]);
+        
+        // Show toast for critical security events
+        if (!payload.new.success) {
+          toast({
+            title: "Security Alert",
+            description: `Failed ${payload.new.action} attempt detected`,
+            variant: "destructive"
+          });
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(eventChannel);
+    };
+  }, [toast]);
 
   const loadSecurityData = async () => {
     try {
-      // Fetch system health data
-      const { data: healthData } = await supabase
-        .from('system_health')
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      // Load recent security events
+      const { data: events, error: eventsError } = await supabase
+        .from('security_audit_log')
         .select('*')
-        .order('checked_at', { ascending: false })
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
         .limit(10);
 
-      if (healthData) {
-        const healthSummary = healthData.reduce((acc: SystemHealth[], item) => {
-          const existing = acc.find(h => h.service === item.service_name);
-          if (!existing) {
-            acc.push({
-              service: item.service_name,
-              status: item.status as any,
-              response_time: item.response_time_ms,
-              last_check: new Date(item.checked_at)
-            });
-          }
-          return acc;
-        }, []);
-        setSystemHealth(healthSummary);
-      }
+      if (eventsError) throw eventsError;
 
-      // Mock security alerts - in production this would come from real monitoring
-      const mockAlerts: SecurityAlert[] = [
-        {
-          id: '1',
-          type: 'API_KEY',
-          severity: 'medium',
-          message: 'API key will expire in 30 days',
-          timestamp: new Date(Date.now() - 300000),
-          resolved: false
-        },
-        {
-          id: '2',
-          type: 'DATABASE',
-          severity: 'low',
-          message: 'Database connection pool at 70% capacity',
-          timestamp: new Date(Date.now() - 600000),
-          resolved: false
-        }
-      ];
-      setAlerts(mockAlerts);
+      // Load API key audit logs
+      const { data: audits, error: auditsError } = await supabase
+        .from('api_key_audit')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(10);
 
+      if (auditsError) throw auditsError;
+
+      setSecurityEvents(events || []);
+      setApiKeyAudits(audits || []);
     } catch (error) {
       console.error('Error loading security data:', error);
+      toast({
+        title: "Error",
+        description: "Failed to load security monitoring data",
+        variant: "destructive"
+      });
     } finally {
       setIsLoading(false);
     }
   };
 
-  const resolveAlert = async (alertId: string) => {
-    setAlerts(prev => prev.map(alert => 
-      alert.id === alertId ? { ...alert, resolved: true } : alert
-    ));
+  const getEventIcon = (action: string, success: boolean) => {
+    if (!success) return <AlertTriangle className="h-4 w-4 text-destructive" />;
     
-    toast({
-      title: "Alert Resolved",
-      description: "Security alert has been marked as resolved",
-    });
-  };
-
-  const getSeverityColor = (severity: string) => {
-    switch (severity) {
-      case 'critical': return 'bg-red-500';
-      case 'high': return 'bg-orange-500';
-      case 'medium': return 'bg-yellow-500';
-      case 'low': return 'bg-blue-500';
-      default: return 'bg-gray-500';
+    switch (action) {
+      case 'API_KEY_ACCESS':
+        return <Activity className="h-4 w-4 text-blue-500" />;
+      case 'LOGIN':
+        return <CheckCircle className="h-4 w-4 text-green-500" />;
+      default:
+        return <Shield className="h-4 w-4 text-muted-foreground" />;
     }
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'healthy': return 'text-green-500';
-      case 'degraded': return 'text-yellow-500';
-      case 'down': return 'text-red-500';
-      default: return 'text-gray-500';
-    }
+  const getEventBadgeVariant = (success: boolean) => {
+    return success ? 'default' : 'destructive';
   };
 
-  const getTypeIcon = (type: string) => {
-    switch (type) {
-      case 'API_KEY': return <Key className="h-4 w-4" />;
-      case 'DATABASE': return <Database className="h-4 w-4" />;
-      case 'NETWORK': return <Globe className="h-4 w-4" />;
-      case 'AUTH': return <Shield className="h-4 w-4" />;
-      default: return <AlertTriangle className="h-4 w-4" />;
-    }
+  const formatEventTime = (timestamp: string) => {
+    return new Date(timestamp).toLocaleString();
   };
 
-  const activeAlerts = alerts.filter(alert => !alert.resolved);
-  const resolvedAlerts = alerts.filter(alert => alert.resolved);
-
-  return (
-    <div className="space-y-6">
-      {/* Security Overview */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">Active Alerts</p>
-                <p className="text-2xl font-bold text-red-500">{activeAlerts.length}</p>
-              </div>
-              <AlertTriangle className="h-5 w-5 text-red-500" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">System Health</p>
-                <p className="text-2xl font-bold text-green-500">
-                  {systemHealth.filter(s => s.status === 'healthy').length}/{systemHealth.length}
-                </p>
-              </div>
-              <CheckCircle className="h-5 w-5 text-green-500" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">Security Score</p>
-                <p className="text-2xl font-bold text-primary">92/100</p>
-              </div>
-              <Shield className="h-5 w-5 text-primary" />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Active Security Alerts */}
-      {activeAlerts.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-red-500" />
-              Active Security Alerts
-            </CardTitle>
-            <CardDescription>
-              Security issues that require attention
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {activeAlerts.map((alert) => (
-                <Alert key={alert.id}>
-                  <div className="flex items-center justify-between w-full">
-                    <div className="flex items-center space-x-3">
-                      {getTypeIcon(alert.type)}
-                      <div>
-                        <p className="font-medium">{alert.message}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {alert.timestamp.toLocaleString()}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Badge className={getSeverityColor(alert.severity)}>
-                        {alert.severity.toUpperCase()}
-                      </Badge>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => resolveAlert(alert.id)}
-                      >
-                        <CheckCircle className="h-3 w-3 mr-1" />
-                        Resolve
-                      </Button>
-                    </div>
-                  </div>
-                </Alert>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* System Health Monitor */}
+  if (isLoading) {
+    return (
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Eye className="h-5 w-5" />
-            System Health Monitor
+            <Shield className="h-5 w-5" />
+            Security Monitor
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="text-center py-4">Loading security data...</div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Security Status Alert */}
+      <Alert>
+        <Shield className="h-4 w-4" />
+        <AlertDescription>
+          <strong>Security Monitoring Active:</strong> All API key access and critical actions are being logged for your security.
+        </AlertDescription>
+      </Alert>
+
+      {/* Recent Security Events */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Shield className="h-5 w-5" />
+            Recent Security Events
           </CardTitle>
           <CardDescription>
-            Real-time status of critical system components
+            Monitor authentication and security-related activities
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {systemHealth.map((health) => (
-              <div
-                key={health.service}
-                className="flex items-center justify-between p-3 border rounded-lg"
-              >
-                <div>
-                  <p className="font-medium">{health.service}</p>
-                  <p className="text-sm text-muted-foreground">
-                    Last check: {health.last_check.toLocaleTimeString()}
-                  </p>
+          {securityEvents.length > 0 ? (
+            <div className="space-y-3">
+              {securityEvents.map((event) => (
+                <div
+                  key={event.id}
+                  className="flex items-center justify-between p-3 border rounded-lg"
+                >
+                  <div className="flex items-center space-x-3">
+                    {getEventIcon(event.action, event.success)}
+                    <div>
+                      <p className="font-medium">{event.action.replace('_', ' ')}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {event.resource && `Resource: ${event.resource}`}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Badge variant={getEventBadgeVariant(event.success)}>
+                      {event.success ? 'Success' : 'Failed'}
+                    </Badge>
+                    <div className="text-xs text-muted-foreground flex items-center gap-1">
+                      <Clock className="h-3 w-3" />
+                      {formatEventTime(event.created_at)}
+                    </div>
+                  </div>
                 </div>
-                <div className="text-right">
-                  <Badge
-                    variant="outline"
-                    className={getStatusColor(health.status)}
-                  >
-                    {health.status.toUpperCase()}
-                  </Badge>
-                  {health.response_time && (
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {health.response_time}ms
-                    </p>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8">
+              <Shield className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
+              <p className="text-muted-foreground">No security events recorded yet</p>
+            </div>
+          )}
         </CardContent>
       </Card>
 
-      {/* Security Recommendations */}
+      {/* API Key Access Logs */}
       <Card>
         <CardHeader>
-          <CardTitle>Security Recommendations</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <Activity className="h-5 w-5" />
+            API Key Activity
+          </CardTitle>
           <CardDescription>
-            Suggested improvements to enhance system security
+            Track API key access and usage patterns
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="space-y-3">
-            <div className="flex items-start space-x-3">
-              <Shield className="h-5 w-5 text-blue-500 mt-0.5" />
-              <div>
-                <p className="font-medium">Enable 2FA for API Access</p>
-                <p className="text-sm text-muted-foreground">
-                  Add two-factor authentication for enhanced API security
-                </p>
-              </div>
+          {apiKeyAudits.length > 0 ? (
+            <div className="space-y-3">
+              {apiKeyAudits.map((audit) => (
+                <div
+                  key={audit.id}
+                  className="flex items-center justify-between p-3 border rounded-lg"
+                >
+                  <div className="flex items-center space-x-3">
+                    <Activity className="h-4 w-4 text-blue-500" />
+                    <div>
+                      <p className="font-medium">{audit.action}</p>
+                      {audit.exchange && (
+                        <p className="text-sm text-muted-foreground">
+                          Exchange: {audit.exchange.toUpperCase()}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Badge variant={getEventBadgeVariant(audit.success)}>
+                      {audit.success ? 'Success' : 'Failed'}
+                    </Badge>
+                    <div className="text-xs text-muted-foreground flex items-center gap-1">
+                      <Clock className="h-3 w-3" />
+                      {formatEventTime(audit.created_at)}
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
-            <div className="flex items-start space-x-3">
-              <Key className="h-5 w-5 text-green-500 mt-0.5" />
-              <div>
-                <p className="font-medium">API Key Rotation</p>
-                <p className="text-sm text-muted-foreground">
-                  Regularly rotate API keys for all connected exchanges
-                </p>
-              </div>
+          ) : (
+            <div className="text-center py-8">
+              <Activity className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
+              <p className="text-muted-foreground">No API key activity recorded yet</p>
             </div>
-            <div className="flex items-start space-x-3">
-              <Database className="h-5 w-5 text-purple-500 mt-0.5" />
-              <div>
-                <p className="font-medium">Database Encryption</p>
-                <p className="text-sm text-muted-foreground">
-                  All sensitive data is encrypted at rest and in transit
-                </p>
-              </div>
-            </div>
-          </div>
+          )}
         </CardContent>
       </Card>
     </div>

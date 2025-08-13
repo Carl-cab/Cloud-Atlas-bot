@@ -14,7 +14,9 @@ import { useAuth } from "@/hooks/useAuth";
 import { usePerformanceMonitor } from "@/hooks/usePerformanceMonitor";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { TrendingUp, BarChart3, Shield, Bell, Activity, Settings, Zap } from "lucide-react";
+import { TrendingUp, BarChart3, Shield, Bell, Activity, Settings, Zap, Key } from "lucide-react";
+import { APIKeyManager } from '@/components/APIKeyManager';
+import { SecurityMonitor } from '@/components/SecurityMonitor';
 
 // Lazy load heavy components for better performance
 const AdvancedNotifications = lazy(() => import("@/components/AdvancedNotifications").then(module => ({ default: module.AdvancedNotifications })));
@@ -84,7 +86,7 @@ const Index = () => {
 
       <div className="container mx-auto px-4 py-6">
         <Tabs defaultValue="dashboard" className="w-full">
-          <TabsList className="grid w-full grid-cols-8">
+          <TabsList className="grid w-full grid-cols-9">
             <TabsTrigger value="dashboard" className="flex items-center gap-2">
               <Activity className="h-4 w-4" />
               Dashboard
@@ -116,6 +118,10 @@ const Index = () => {
             <TabsTrigger value="performance" className="flex items-center gap-2">
               <Zap className="h-4 w-4" />
               Performance
+            </TabsTrigger>
+            <TabsTrigger value="security" className="flex items-center gap-2">
+              <Key className="h-4 w-4" />
+              Security
             </TabsTrigger>
           </TabsList>
 
@@ -174,6 +180,11 @@ const Index = () => {
             }>
               <PerformanceOptimizer />
             </Suspense>
+          </TabsContent>
+
+          <TabsContent value="security" className="space-y-4">
+            <SecurityMonitor />
+            <APIKeyManager />
           </TabsContent>
         </Tabs>
       </div>

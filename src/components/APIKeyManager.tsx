@@ -20,6 +20,10 @@ interface APIKey {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  last_accessed?: string;
+  access_count: number;
+  failed_attempts: number;
+  locked_until?: string;
 }
 
 interface NewAPIKey {
@@ -374,6 +378,31 @@ export const APIKeyManager = () => {
                             <Eye className="h-3 w-3" />
                           }
                         </Button>
+                      </div>
+                      
+                      {/* Security Status Indicators */}
+                      <div className="flex items-center space-x-4 text-xs">
+                        {key.locked_until && new Date(key.locked_until) > new Date() && (
+                          <Badge variant="destructive" className="text-xs">
+                            <AlertTriangle className="h-3 w-3 mr-1" />
+                            Locked until {new Date(key.locked_until).toLocaleString()}
+                          </Badge>
+                        )}
+                        {key.failed_attempts > 0 && (
+                          <span className="text-destructive">
+                            Failed attempts: {key.failed_attempts}
+                          </span>
+                        )}
+                        {key.access_count > 0 && (
+                          <span className="text-muted-foreground">
+                            Used {key.access_count} times
+                          </span>
+                        )}
+                        {key.last_accessed && (
+                          <span className="text-muted-foreground">
+                            Last used: {new Date(key.last_accessed).toLocaleDateString()}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
