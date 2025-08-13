@@ -14,44 +14,95 @@ export type Database = {
   }
   public: {
     Tables: {
+      api_key_audit: {
+        Row: {
+          action: string
+          api_key_id: string | null
+          created_at: string
+          details: Json | null
+          exchange: string | null
+          id: string
+          ip_address: unknown | null
+          success: boolean | null
+          user_agent: string | null
+          user_id: string
+        }
+        Insert: {
+          action: string
+          api_key_id?: string | null
+          created_at?: string
+          details?: Json | null
+          exchange?: string | null
+          id?: string
+          ip_address?: unknown | null
+          success?: boolean | null
+          user_agent?: string | null
+          user_id: string
+        }
+        Update: {
+          action?: string
+          api_key_id?: string | null
+          created_at?: string
+          details?: Json | null
+          exchange?: string | null
+          id?: string
+          ip_address?: unknown | null
+          success?: boolean | null
+          user_agent?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       api_keys: {
         Row: {
+          access_count: number | null
           api_key: string
           api_secret: string
           created_at: string | null
           encryption_key_id: string | null
           exchange: string
+          failed_attempts: number | null
           id: string
           is_active: boolean | null
+          last_accessed: string | null
           last_used: string | null
+          locked_until: string | null
           passphrase: string | null
           updated_at: string | null
           usage_count: number | null
           user_id: string
         }
         Insert: {
+          access_count?: number | null
           api_key: string
           api_secret: string
           created_at?: string | null
           encryption_key_id?: string | null
           exchange: string
+          failed_attempts?: number | null
           id?: string
           is_active?: boolean | null
+          last_accessed?: string | null
           last_used?: string | null
+          locked_until?: string | null
           passphrase?: string | null
           updated_at?: string | null
           usage_count?: number | null
           user_id: string
         }
         Update: {
+          access_count?: number | null
           api_key?: string
           api_secret?: string
           created_at?: string | null
           encryption_key_id?: string | null
           exchange?: string
+          failed_attempts?: number | null
           id?: string
           is_active?: boolean | null
+          last_accessed?: string | null
           last_used?: string | null
+          locked_until?: string | null
           passphrase?: string | null
           updated_at?: string | null
           usage_count?: number | null
@@ -1185,6 +1236,19 @@ export type Database = {
         }
         Returns: string
       }
+      encrypt_api_credential: {
+        Args: { credential: string; user_salt: string }
+        Returns: string
+      }
+      get_api_credentials: {
+        Args: { p_exchange: string }
+        Returns: {
+          api_key: string
+          api_secret: string
+          passphrase: string
+          is_active: boolean
+        }[]
+      }
       get_notification_settings: {
         Args: { p_user_id: string }
         Returns: {
@@ -1197,6 +1261,10 @@ export type Database = {
           email_address: string
           telegram_chat_id: string
         }[]
+      }
+      lock_api_key_on_failure: {
+        Args: { p_api_key_id: string }
+        Returns: undefined
       }
       log_security_event: {
         Args: {
@@ -1255,6 +1323,10 @@ export type Database = {
           p_telegram_chat_id?: string
         }
         Returns: undefined
+      }
+      validate_api_key_access: {
+        Args: { p_user_id: string; p_exchange: string }
+        Returns: boolean
       }
     }
     Enums: {
