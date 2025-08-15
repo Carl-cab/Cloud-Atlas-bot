@@ -70,10 +70,14 @@ export const TradingSetupWizard = () => {
 
   const checkExistingSetup = async () => {
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
       // Check API keys
       const { data: apiKeys } = await supabase
         .from('api_keys')
         .select('exchange')
+        .eq('user_id', user.id)
         .eq('is_active', true);
 
       const krakenConfigured = apiKeys?.some(key => key.exchange === 'kraken') || false;
@@ -82,10 +86,14 @@ export const TradingSetupWizard = () => {
       const { data: botConfig } = await supabase
         .from('bot_config')
         .select('*')
-        .single();
+        .eq('user_id', user.id)
+        .maybeSingle();
 
       const paperTradingSetup = botConfig?.paper_trading_balance > 0;
       const riskConfigured = botConfig?.risk_per_trade === 0.5 && botConfig?.daily_stop_loss === 2.0 && botConfig?.max_positions === 4;
+      
+      // Check if validation was completed (stored in localStorage)
+      const validationComplete = localStorage.getItem('setup_validation_complete') === 'true';
 
       setApiKeyStatus({
         kraken: krakenConfigured,
@@ -95,6 +103,9 @@ export const TradingSetupWizard = () => {
       updateStepCompletion('api-keys', krakenConfigured);
       updateStepCompletion('risk-params', riskConfigured);
       updateStepCompletion('paper-trading', paperTradingSetup);
+      updateStepCompletion('validation', validationComplete);
+      
+      console.log('Setup check:', { krakenConfigured, riskConfigured, paperTradingSetup, validationComplete });
     } catch (error) {
       console.error('Error checking setup:', error);
     }
@@ -132,7 +143,7 @@ export const TradingSetupWizard = () => {
         .from('bot_config')
         .upsert({
           user_id: user.id,
-          risk_per_trade: riskSettings.riskPerTrade / 100,
+          risk_per_trade: riskSettings.riskPerTrade,
           daily_stop_loss: riskSettings.dailyStopLoss,
           max_positions: riskSettings.maxPositions,
           capital_cad: riskSettings.capitalCAD,
@@ -165,6 +176,9 @@ export const TradingSetupWizard = () => {
     try {
       // Simulate system validation
       await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // Store validation completion in localStorage
+      localStorage.setItem('setup_validation_complete', 'true');
       
       updateStepCompletion('validation', true);
       

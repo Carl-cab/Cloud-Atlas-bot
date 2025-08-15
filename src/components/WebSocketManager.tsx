@@ -58,6 +58,23 @@ export const WebSocketManager = () => {
     'XRPUSD', 'MATICUSD', 'AVAXUSD', 'LINKUSD', 'LTCUSD'
   ];
 
+  // Map UI symbols to Kraken symbols
+  const mapToKrakenSymbol = (symbol: string) => {
+    const symbolMap: Record<string, string> = {
+      'BTCUSD': 'XBT/USD',
+      'ETHUSD': 'ETH/USD',
+      'ADAUSD': 'ADA/USD',
+      'SOLUSD': 'SOL/USD',
+      'DOTUSD': 'DOT/USD',
+      'XRPUSD': 'XRP/USD',
+      'MATICUSD': 'MATIC/USD',
+      'AVAXUSD': 'AVAX/USD',
+      'LINKUSD': 'LINK/USD',
+      'LTCUSD': 'LTC/USD'
+    };
+    return symbolMap[symbol] || symbol.replace('USD', '/USD');
+  };
+
   useEffect(() => {
     // Auto-connect to Kraken BTCUSD on load
     connectToFeed('kraken', 'BTCUSD', 'ticker');
@@ -105,24 +122,34 @@ export const WebSocketManager = () => {
       
       if (exchange === 'kraken') {
         ws = new WebSocket('wss://ws.kraken.com');
+        const krakenSymbol = mapToKrakenSymbol(symbol);
         
         ws.onopen = () => {
           // Subscribe to Kraken ticker
           const subscription = {
             event: 'subscribe',
-            pair: [symbol.replace('USD', '/USD')],
+            pair: [krakenSymbol],
             subscription: { name: type === 'ticker' ? 'ticker' : 'trade' }
           };
           ws.send(JSON.stringify(subscription));
+          console.log('Kraken WebSocket: Subscribing to', krakenSymbol);
         };
 
         ws.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
             
-            if (Array.isArray(data) && data[1] === symbol.replace('USD', '/USD')) {
-              if (type === 'ticker' && data[2]) {
-                const tickerData = data[2];
+            // Handle subscription confirmation
+            if (data.event === 'subscriptionStatus' && data.status === 'subscribed') {
+              console.log('Kraken WebSocket: Successfully subscribed to', data.pair);
+              updateConnectionStatus(connectionId, 'connected');
+              return;
+            }
+            
+            // Handle ticker data - format: [channelID, data, channelName, pair]
+            if (Array.isArray(data) && data.length >= 4 && data[3] === krakenSymbol) {
+              if (type === 'ticker' && data[1]) {
+                const tickerData = data[1];
                 setMarketData(prev => ({
                   ...prev,
                   [symbol]: {
@@ -135,9 +162,8 @@ export const WebSocketManager = () => {
                     timestamp: new Date()
                   }
                 }));
+                console.log('Kraken WebSocket: Updated market data for', symbol);
               }
-              
-              updateConnectionStatus(connectionId, 'connected');
             }
           } catch (error) {
             console.error('Error parsing WebSocket message:', error);
