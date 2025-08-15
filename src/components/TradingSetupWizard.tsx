@@ -276,13 +276,19 @@ export const TradingSetupWizard = () => {
           </Card>
 
           {allStepsCompleted && (
-            <Alert>
-              <CheckCircle className="h-4 w-4" />
-              <AlertDescription>
-                <strong>Setup Complete!</strong> Your trading bot is ready for paper trading. 
-                Click below to start the 5-7 day paper trading phase.
-              </AlertDescription>
-            </Alert>
+            <>
+              <Alert>
+                <CheckCircle className="h-4 w-4" />
+                <AlertDescription>
+                  <strong>Setup Complete!</strong> Your trading bot is ready for paper trading. 
+                  Click below to start the 5-7 day paper trading phase.
+                </AlertDescription>
+              </Alert>
+              <Button onClick={startPaperTrading} className="w-full" size="lg">
+                <Play className="h-5 w-5 mr-2" />
+                Start Paper Trading
+              </Button>
+            </>
           )}
         </TabsContent>
 
