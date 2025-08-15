@@ -7,7 +7,7 @@ export type Json =
   | Json[]
 
 export type Database = {
-  // Allows to automatically instanciate createClient with right options
+  // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
     PostgrestVersion: "12.2.12 (cd3cf9e)"
@@ -1219,9 +1219,9 @@ export type Database = {
     Functions: {
       check_rate_limit: {
         Args: {
-          p_user_id: string
           p_endpoint: string
           p_max_requests?: number
+          p_user_id: string
           p_window_minutes?: number
         }
         Returns: boolean
@@ -1229,9 +1229,9 @@ export type Database = {
       create_system_alert: {
         Args: {
           p_alert_type: string
-          p_severity: string
           p_message: string
           p_metadata?: Json
+          p_severity: string
           p_user_id?: string
         }
         Returns: string
@@ -1245,21 +1245,21 @@ export type Database = {
         Returns: {
           api_key: string
           api_secret: string
-          passphrase: string
           is_active: boolean
+          passphrase: string
         }[]
       }
       get_notification_settings: {
         Args: { p_user_id: string }
         Returns: {
-          telegram_enabled: boolean
-          email_enabled: boolean
           daily_reports: boolean
-          trade_alerts: boolean
-          risk_alerts: boolean
-          performance_summary: boolean
           email_address: string
+          email_enabled: boolean
+          performance_summary: boolean
+          risk_alerts: boolean
           telegram_chat_id: string
+          telegram_enabled: boolean
+          trade_alerts: boolean
         }[]
       }
       lock_api_key_on_failure: {
@@ -1268,36 +1268,36 @@ export type Database = {
       }
       log_security_event: {
         Args: {
-          p_user_id: string
           p_action: string
-          p_resource?: string
           p_ip_address?: unknown
-          p_user_agent?: string
-          p_success?: boolean
           p_metadata?: Json
+          p_resource?: string
+          p_success?: boolean
+          p_user_agent?: string
+          p_user_id: string
         }
         Returns: undefined
       }
       log_trade_execution: {
         Args: {
-          p_user_id: string
-          p_symbol: string
-          p_side: string
-          p_quantity: number
-          p_price: number
-          p_order_type: string
-          p_status: string
           p_metadata?: Json
+          p_order_type: string
+          p_price: number
+          p_quantity: number
+          p_side: string
+          p_status: string
+          p_symbol: string
+          p_user_id: string
         }
         Returns: undefined
       }
       log_trading_event: {
         Args: {
-          p_user_id: string
-          p_level: string
           p_category: string
+          p_level: string
           p_message: string
           p_metadata?: Json
+          p_user_id: string
         }
         Returns: undefined
       }
@@ -1305,27 +1305,27 @@ export type Database = {
         Args: {
           p_metric_name: string
           p_metric_value: number
-          p_unit?: string
           p_tags?: Json
+          p_unit?: string
         }
         Returns: undefined
       }
       upsert_notification_settings: {
         Args: {
-          p_user_id: string
-          p_telegram_enabled?: boolean
-          p_email_enabled?: boolean
           p_daily_reports?: boolean
-          p_trade_alerts?: boolean
-          p_risk_alerts?: boolean
-          p_performance_summary?: boolean
           p_email_address?: string
+          p_email_enabled?: boolean
+          p_performance_summary?: boolean
+          p_risk_alerts?: boolean
           p_telegram_chat_id?: string
+          p_telegram_enabled?: boolean
+          p_trade_alerts?: boolean
+          p_user_id: string
         }
         Returns: undefined
       }
       validate_api_key_access: {
-        Args: { p_user_id: string; p_exchange: string }
+        Args: { p_exchange: string; p_user_id: string }
         Returns: boolean
       }
     }
