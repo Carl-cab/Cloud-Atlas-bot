@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { APIKeyManager } from '@/components/APIKeyManager';
 
 interface SetupStep {
   id: string;
@@ -54,9 +55,18 @@ export const TradingSetupWizard = () => {
     telegram: false
   });
 
+  const [showAPIKeyManager, setShowAPIKeyManager] = useState(false);
+
   useEffect(() => {
     checkExistingSetup();
   }, []);
+
+  useEffect(() => {
+    if (!showAPIKeyManager) {
+      // Refresh API key status when modal is closed
+      checkExistingSetup();
+    }
+  }, [showAPIKeyManager]);
 
   const checkExistingSetup = async () => {
     try {
@@ -300,7 +310,7 @@ export const TradingSetupWizard = () => {
                     Required for live trading execution
                   </p>
                   {!apiKeyStatus.kraken && (
-                    <Button variant="outline" size="sm" onClick={() => window.open('#', '_self')}>
+                    <Button variant="outline" size="sm" onClick={() => setShowAPIKeyManager(true)}>
                       Configure Kraken API
                     </Button>
                   )}
@@ -456,6 +466,21 @@ export const TradingSetupWizard = () => {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* API Key Manager Modal */}
+      {showAPIKeyManager && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-background p-6 rounded-lg max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-semibold">Configure API Keys</h2>
+              <Button variant="ghost" size="sm" onClick={() => setShowAPIKeyManager(false)}>
+                ✕
+              </Button>
+            </div>
+            <APIKeyManager />
+          </div>
+        </div>
+      )}
     </div>
   );
 };
