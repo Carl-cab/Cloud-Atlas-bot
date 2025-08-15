@@ -14,9 +14,10 @@ import { useAuth } from "@/hooks/useAuth";
 import { usePerformanceMonitor } from "@/hooks/usePerformanceMonitor";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { TrendingUp, BarChart3, Shield, Bell, Activity, Settings, Zap, Key } from "lucide-react";
+import { TrendingUp, BarChart3, Shield, Bell, Activity, Settings, Zap, Key, Rocket } from "lucide-react";
 import { APIKeyManager } from '@/components/APIKeyManager';
 import { SecurityMonitor } from '@/components/SecurityMonitor';
+import { TradingSetupWizard } from '@/components/TradingSetupWizard';
 
 // Lazy load heavy components for better performance
 const AdvancedNotifications = lazy(() => import("@/components/AdvancedNotifications").then(module => ({ default: module.AdvancedNotifications })));
@@ -85,8 +86,12 @@ const Index = () => {
       </div>
 
       <div className="container mx-auto px-4 py-6">
-        <Tabs defaultValue="dashboard" className="w-full">
-          <TabsList className="grid w-full grid-cols-9">
+        <Tabs defaultValue="setup" className="w-full">
+          <TabsList className="grid w-full grid-cols-10">
+            <TabsTrigger value="setup" className="flex items-center gap-2">
+              <Rocket className="h-4 w-4" />
+              Setup
+            </TabsTrigger>
             <TabsTrigger value="dashboard" className="flex items-center gap-2">
               <Activity className="h-4 w-4" />
               Dashboard
@@ -124,6 +129,10 @@ const Index = () => {
               Security
             </TabsTrigger>
           </TabsList>
+
+          <TabsContent value="setup" className="space-y-4">
+            <TradingSetupWizard />
+          </TabsContent>
 
           <TabsContent value="dashboard" className="space-y-4">
             <RealTimeTradingDashboard />

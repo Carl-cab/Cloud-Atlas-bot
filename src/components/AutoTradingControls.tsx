@@ -28,17 +28,18 @@ interface AutoTradingControlsProps {
 
 export const AutoTradingControls = ({ botActive, onToggle, platform }: AutoTradingControlsProps) => {
   const [settings, setSettings] = useState({
-    maxInvestment: 1000,
-    riskLevel: [5],
+    maxInvestment: 100, // $100 CAD beta test
+    riskLevel: [0.5], // 0.5% risk per trade
     takeProfitPercent: 15,
     stopLossPercent: 8,
     enableDCA: true,
     dcaInterval: 4,
-    maxPositions: 3,
+    maxPositions: 4, // 4 max positions as per requirements
     tradingPairs: ['BTC/USDT', 'ETH/USDT', 'ADA/USDT'],
     enableGridTrading: false,
     gridLevels: 10,
-    enableTrendFollowing: true
+    enableTrendFollowing: true,
+    dailyStopLoss: 2.0 // 2% daily stop loss
   });
 
   const [activeStrategies, setActiveStrategies] = useState([
@@ -119,19 +120,19 @@ export const AutoTradingControls = ({ botActive, onToggle, platform }: AutoTradi
                 <div>
                   <Label className="flex items-center gap-2">
                     <Shield className="w-4 h-4" />
-                    Risk Level: {settings.riskLevel[0]}/10
+                    Risk Level: {settings.riskLevel[0]}%/trade
                   </Label>
                   <Slider
                     value={settings.riskLevel}
                     onValueChange={(value) => updateSetting('riskLevel', value)}
-                    max={10}
-                    min={1}
-                    step={1}
+                    max={2}
+                    min={0.1}
+                    step={0.1}
                     className="mt-2"
                   />
                   <div className="flex justify-between text-xs text-muted-foreground mt-1">
-                    <span>Conservative</span>
-                    <span>Aggressive</span>
+                    <span>0.1% (Conservative)</span>
+                    <span>2% (Aggressive)</span>
                   </div>
                 </div>
 
@@ -254,9 +255,14 @@ export const AutoTradingControls = ({ botActive, onToggle, platform }: AutoTradi
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <Label>Daily Loss Limit (%)</Label>
-                  <Input type="number" defaultValue="5" className="mt-2" />
+                  <Input 
+                    type="number" 
+                    value={settings.dailyStopLoss}
+                    onChange={(e) => updateSetting('dailyStopLoss', Number(e.target.value))}
+                    className="mt-2" 
+                  />
                   <p className="text-xs text-muted-foreground mt-1">
-                    Bot will stop trading if daily losses exceed this percentage
+                    Bot will stop trading if daily losses exceed this percentage (Recommended: 2%)
                   </p>
                 </div>
 
@@ -270,9 +276,14 @@ export const AutoTradingControls = ({ botActive, onToggle, platform }: AutoTradi
 
                 <div>
                   <Label>Position Size per Trade (%)</Label>
-                  <Input type="number" defaultValue="2" className="mt-2" />
+                  <Input 
+                    type="number" 
+                    value={settings.riskLevel[0]}
+                    onChange={(e) => updateSetting('riskLevel', [Number(e.target.value)])}
+                    className="mt-2" 
+                  />
                   <p className="text-xs text-muted-foreground mt-1">
-                    Percentage of portfolio to risk per trade
+                    Percentage of portfolio to risk per trade (Recommended: 0.5%)
                   </p>
                 </div>
 
