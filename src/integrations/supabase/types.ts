@@ -1217,7 +1217,51 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      api_keys_secure_view: {
+        Row: {
+          access_count: number | null
+          created_at: string | null
+          exchange: string | null
+          failed_attempts: number | null
+          id: string | null
+          is_active: boolean | null
+          last_accessed: string | null
+          locked_until: string | null
+          security_status: string | null
+          status_display: string | null
+          updated_at: string | null
+          user_id: string | null
+        }
+        Insert: {
+          access_count?: number | null
+          created_at?: string | null
+          exchange?: string | null
+          failed_attempts?: number | null
+          id?: string | null
+          is_active?: boolean | null
+          last_accessed?: string | null
+          locked_until?: string | null
+          security_status?: never
+          status_display?: never
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          access_count?: number | null
+          created_at?: string | null
+          exchange?: string | null
+          failed_attempts?: number | null
+          id?: string | null
+          is_active?: boolean | null
+          last_accessed?: string | null
+          locked_until?: string | null
+          security_status?: never
+          status_display?: never
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       check_rate_limit: {
@@ -1239,26 +1283,9 @@ export type Database = {
         }
         Returns: string
       }
-      decrypt_credential: {
-        Args: { encrypted_credential: string }
-        Returns: string
-      }
       encrypt_api_credential: {
         Args: { credential: string; user_salt: string }
         Returns: string
-      }
-      encrypt_credential: {
-        Args: { credential: string }
-        Returns: string
-      }
-      get_api_credentials: {
-        Args: { p_exchange: string }
-        Returns: {
-          api_key: string
-          api_secret: string
-          is_active: boolean
-          passphrase: string
-        }[]
       }
       get_notification_settings: {
         Args: { p_user_id: string }
@@ -1271,6 +1298,13 @@ export type Database = {
           telegram_chat_id: string
           telegram_enabled: boolean
           trade_alerts: boolean
+        }[]
+      }
+      get_user_credentials_for_server: {
+        Args: { p_exchange: string; p_user_id: string }
+        Returns: {
+          exchange_name: string
+          has_credentials: boolean
         }[]
       }
       lock_api_key_on_failure: {
@@ -1320,15 +1354,6 @@ export type Database = {
           p_unit?: string
         }
         Returns: undefined
-      }
-      store_api_credentials: {
-        Args: {
-          p_api_key: string
-          p_api_secret: string
-          p_exchange: string
-          p_passphrase?: string
-        }
-        Returns: string
       }
       upsert_notification_settings: {
         Args: {
