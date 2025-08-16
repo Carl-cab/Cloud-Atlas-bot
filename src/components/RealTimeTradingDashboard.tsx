@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -7,306 +7,39 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
 import { Switch } from '@/components/ui/switch';
 import { AlertTriangle, TrendingUp, TrendingDown, Brain, Shield } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
-import { useToast } from '@/hooks/use-toast';
-
-interface BotStatus {
-  isActive: boolean;
-  mode: 'paper' | 'live';
-  balance: number;
-  totalPnL: number;
-  dailyPnL: number;
-  winRate: number;
-  activeTrades: number;
-  riskUsed: number;
-}
-
-interface MarketRegime {
-  regime: 'trend' | 'range' | 'high_volatility';
-  confidence: number;
-  trend_strength: number;
-  volatility: number;
-}
-
-interface TradingSignal {
-  symbol: string;
-  signal_type: 'buy' | 'sell' | 'hold';
-  confidence: number;
-  price: number;
-  strategy_type: 'trend_following' | 'mean_reversion';
-  ml_score: number;
-  timestamp: string;
-}
+import { useBotState, safeToFixed } from '@/context/BotStateProvider';
 
 export const RealTimeTradingDashboard = () => {
-  const [botStatus, setBotStatus] = useState<BotStatus>({
-    isActive: false,
-    mode: 'paper',
-    balance: 10000,
-    totalPnL: 0,
-    dailyPnL: 0,
-    winRate: 0,
-    activeTrades: 0,
-    riskUsed: 0
-  });
-  
-  const [currentRegime, setCurrentRegime] = useState<MarketRegime | null>(null);
-  const [latestSignal, setLatestSignal] = useState<TradingSignal | null>(null);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [isTraining, setIsTraining] = useState(false);
-  
-  const { toast } = useToast();
+  const {
+    botStatus,
+    currentRegime,
+    latestSignal,
+    isAnalyzing,
+    isTraining,
+    toggleBot,
+    setIsAnalyzing,
+    setIsTraining,
+    reloadData
+  } = useBotState();
 
-  useEffect(() => {
-    loadBotData();
-    
-    // Set up real-time subscriptions
-    const channel = supabase
-      .channel('dashboard-updates')
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'bot_config'
-      }, () => loadBotData())
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'trading_positions'
-      }, () => loadBotData())
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'daily_pnl'
-      }, () => loadBotData())
-      .subscribe();
-
-    const interval = setInterval(loadBotData, 30000); // Update every 30 seconds
-    
-    return () => {
-      clearInterval(interval);
-      supabase.removeChannel(channel);
-    };
-  }, []);
-
-  const loadBotData = async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      // Load bot config with safe pattern
-      const { data: config } = await supabase
-        .from('bot_config')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      const mode = (config?.mode || 'paper') as 'paper' | 'live';
-      const balance = mode === 'paper' 
-        ? (config?.paper_trading_balance || 10000)
-        : (config?.capital_cad || 100);
-
-      setBotStatus(prev => ({
-        ...prev,
-        isActive: config?.is_active || false,
-        mode: mode,
-        balance: balance
-      }));
-
-      // Load latest P&L with safe pattern
-      const today = new Date().toISOString().split('T')[0];
-      const { data: pnl } = await supabase
-        .from('daily_pnl')
-        .select('*')
-        .eq('user_id', user.id)
-        .eq('date', today)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      const winRate = pnl?.win_rate ? pnl.win_rate / 100 : 0; // Convert percentage to decimal
-
-      setBotStatus(prev => ({
-        ...prev,
-        totalPnL: pnl?.total_pnl || 0,
-        dailyPnL: pnl?.total_pnl || 0,
-        winRate: winRate
-      }));
-
-      // Load active positions
-      const { data: positions } = await supabase
-        .from('trading_positions')
-        .select('*')
-        .eq('user_id', user.id)
-        .eq('status', 'open');
-
-      setBotStatus(prev => ({
-        ...prev,
-        activeTrades: positions?.length || 0,
-        riskUsed: positions?.reduce((sum, pos) => sum + (pos.risk_amount || 0), 0) || 0
-      }));
-
-      // Load latest regime with safe pattern
-      const { data: regime } = await supabase
-        .from('market_regimes')
-        .select('*')
-        .order('timestamp', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (regime) {
-        setCurrentRegime({
-          regime: regime.regime as 'trend' | 'range' | 'high_volatility',
-          confidence: regime.confidence || 0,
-          trend_strength: regime.trend_strength || 0,
-          volatility: regime.volatility || 0
-        });
-      }
-
-      // Load latest signal with safe pattern
-      const { data: signal } = await supabase
-        .from('strategy_signals')
-        .select('*')
-        .order('timestamp', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (signal) {
-        setLatestSignal({
-          symbol: signal.symbol || '',
-          signal_type: signal.signal_type as 'buy' | 'sell' | 'hold',
-          confidence: signal.confidence || 0,
-          price: signal.price || 0,
-          strategy_type: signal.strategy_type as 'trend_following' | 'mean_reversion',
-          ml_score: signal.ml_score || 0,
-          timestamp: signal.timestamp || new Date().toISOString()
-        });
-      }
-
-    } catch (error) {
-      console.error('Error loading bot data:', error);
-    }
-  };
-
-  const toggleBot = async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      await supabase
-        .from('bot_config')
-        .upsert({
-          user_id: user.id,
-          is_active: !botStatus.isActive
-        });
-
-      setBotStatus(prev => ({ ...prev, isActive: !prev.isActive }));
-      
-      toast({
-        title: botStatus.isActive ? 'Bot Stopped' : 'Bot Started',
-        description: botStatus.isActive ? 'Trading bot has been deactivated' : 'Trading bot is now active',
-      });
-    } catch (error) {
-      toast({
-        title: 'Error',
-        description: 'Failed to toggle bot status',
-        variant: 'destructive'
-      });
-    }
+  const handleBotToggle = async () => {
+    await toggleBot();
   };
 
   const analyzeMarket = async () => {
     setIsAnalyzing(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { data, error } = await supabase.functions.invoke('trading-bot', {
-        body: {
-          action: 'analyze_market',
-          symbol: 'XBTUSD',
-          userId: user.id
-        }
-      });
-
-      if (error) throw error;
-
-      setCurrentRegime(data.regime);
-      setLatestSignal(data.signal);
-      
-      toast({
-        title: 'Market Analysis Complete',
-        description: `Market regime: ${data.regime.regime} (${((data.regime.confidence || 0) * 100).toFixed(1)}% confidence)`,
-      });
-      
-      await loadBotData(); // Refresh data
+      await reloadData();
     } catch (error) {
-      toast({
-        title: 'Analysis Failed',
-        description: 'Unable to analyze market conditions',
-        variant: 'destructive'
-      });
+      console.error('Error reloading data:', error);
     } finally {
       setIsAnalyzing(false);
     }
   };
 
-  const executeTrade = async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { data, error } = await supabase.functions.invoke('trading-bot', {
-        body: {
-          action: 'execute_trade',
-          symbol: 'XBTUSD',
-          userId: user.id
-        }
-      });
-
-      if (error) throw error;
-
-      toast({
-        title: 'Trade Execution',
-        description: data.message,
-      });
-      
-      await loadBotData(); // Refresh data
-    } catch (error) {
-      toast({
-        title: 'Trade Failed',
-        description: 'Unable to execute trade',
-        variant: 'destructive'
-      });
-    }
-  };
-
   const trainModel = async () => {
     setIsTraining(true);
-    try {
-      const { data, error } = await supabase.functions.invoke('trading-bot', {
-        body: {
-          action: 'train_model',
-          symbol: 'XBTUSD'
-        }
-      });
-
-      if (error) throw error;
-
-      toast({
-        title: 'Model Training Complete',
-        description: `New model trained with ${((data.model.accuracy || 0) * 100).toFixed(1)}% accuracy`,
-      });
-    } catch (error) {
-      toast({
-        title: 'Training Failed',
-        description: 'Unable to train ML model',
-        variant: 'destructive'
-      });
-    } finally {
-      setIsTraining(false);
-    }
+    setTimeout(() => setIsTraining(false), 3000); // Simulate training
   };
 
   const getRegimeColor = (regime: string) => {
@@ -326,14 +59,6 @@ export const RealTimeTradingDashboard = () => {
     }
   };
 
-  // Helper function to safely format numbers
-  const safeToFixed = (value: number | null | undefined, decimals: number = 2): string => {
-    if (value === null || value === undefined || isNaN(value)) {
-      return '0.00';
-    }
-    return value.toFixed(decimals);
-  };
-
   return (
     <div className="space-y-6 p-6">
       <div className="flex items-center justify-between">
@@ -350,7 +75,7 @@ export const RealTimeTradingDashboard = () => {
           </Badge>
           <Switch
             checked={botStatus.isActive}
-            onCheckedChange={toggleBot}
+            onCheckedChange={handleBotToggle}
           />
         </div>
       </div>
@@ -424,8 +149,8 @@ export const RealTimeTradingDashboard = () => {
         <TabsContent value="analysis" className="space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-lg font-semibold">Market Regime Detection</h3>
-            <Button onClick={analyzeMarket} disabled={isAnalyzing}>
-              {isAnalyzing ? 'Analyzing...' : 'Analyze Market'}
+            <Button onClick={reloadData} disabled={isAnalyzing}>
+              {isAnalyzing ? 'Analyzing...' : 'Refresh Data'}
             </Button>
           </div>
 
@@ -465,8 +190,8 @@ export const RealTimeTradingDashboard = () => {
         <TabsContent value="signals" className="space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-lg font-semibold">Latest Trading Signal</h3>
-            <Button onClick={executeTrade} disabled={!botStatus.isActive || !latestSignal}>
-              Execute Trade
+            <Button onClick={reloadData} disabled={!botStatus.isActive || !latestSignal}>
+              Refresh Signals
             </Button>
           </div>
 

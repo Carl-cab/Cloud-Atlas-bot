@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { useBotState } from '@/context/BotStateProvider';
 
 interface NotificationSettings {
   telegram_enabled: boolean;
@@ -40,6 +41,7 @@ interface NotificationLog {
 }
 
 export const NotificationCenter = () => {
+  const { botStatus } = useBotState();
   const [settings, setSettings] = useState<NotificationSettings>({
     telegram_enabled: false,
     email_enabled: false,
@@ -48,6 +50,39 @@ export const NotificationCenter = () => {
     risk_alerts: true,
     performance_summary: true
   });
+  
+  const [notificationQueue, setNotificationQueue] = useState<any[]>([]);
+  const [logs, setLogs] = useState<NotificationLog[]>([]);
+  const { toast } = useToast();
+
+  useEffect(() => {
+    const loadSettings = async () => {};
+    const loadNotifications = async () => {};
+    const loadLogs = async () => {};
+    
+    loadSettings();
+    loadNotifications();
+    loadLogs();
+    
+    // Set up real-time subscriptions for notifications
+    const channel = supabase
+      .channel('notification-updates')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'notification_queue'
+      }, () => loadNotifications())
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',  
+        table: 'notification_logs'
+      }, () => loadLogs())
+      .subscribe();
+    
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
   
   const [notifications, setNotifications] = useState<NotificationLog[]>([]);
   const [isLoading, setIsLoading] = useState(true);

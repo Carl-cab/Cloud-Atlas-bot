@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Activity, Server, Database, Wifi, AlertTriangle, CheckCircle, RefreshCw } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { useBotState } from '@/context/BotStateProvider';
 
 interface SystemMetrics {
   cpu_usage: number;
@@ -33,6 +34,7 @@ interface AlertRule {
 }
 
 export const SystemHealthMonitor: React.FC = () => {
+  const { botStatus } = useBotState();
   const [metrics, setMetrics] = useState<SystemMetrics>({
     cpu_usage: 45,
     memory_usage: 62,
@@ -44,19 +46,39 @@ export const SystemHealthMonitor: React.FC = () => {
   });
   
   const [healthChecks, setHealthChecks] = useState<HealthCheck[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [autoRefresh, setAutoRefresh] = useState(true);
   const [alerts, setAlerts] = useState<AlertRule[]>([
     { metric: 'cpu_usage', threshold: 80, severity: 'warning', enabled: true },
     { metric: 'memory_usage', threshold: 85, severity: 'critical', enabled: true },
     { metric: 'error_rate', threshold: 5, severity: 'warning', enabled: true },
-    { metric: 'response_time', threshold: 1000, severity: 'critical', enabled: true }
+    { metric: 'network_latency', threshold: 1000, severity: 'warning', enabled: true }
   ]);
   
-  const [isLoading, setIsLoading] = useState(false);
-  const [autoRefresh, setAutoRefresh] = useState(true);
   const { toast } = useToast();
 
-  const fetchSystemHealth = async () => {
-    setIsLoading(true);
+  useEffect(() => {
+    loadHealthData();
+    
+    // Set up real-time subscriptions for system health
+    const channel = supabase
+      .channel('system-health-updates')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'system_health'
+      }, () => loadHealthData())
+      .subscribe();
+    
+    const interval = setInterval(loadHealthData, 30000); // Update every 30 seconds
+    
+    return () => {
+      clearInterval(interval);
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  const loadHealthData = async () => {
     try {
       const { data, error } = await supabase
         .from('system_health')
@@ -75,56 +97,13 @@ export const SystemHealthMonitor: React.FC = () => {
       })) || [];
 
       setHealthChecks(formattedHealthChecks);
-
-      // Update metrics with some variation
-      setMetrics(prev => ({
-        ...prev,
-        cpu_usage: Math.max(20, Math.min(90, prev.cpu_usage + (Math.random() - 0.5) * 10)),
-        memory_usage: Math.max(30, Math.min(95, prev.memory_usage + (Math.random() - 0.5) * 8)),
-        network_latency: Math.max(50, Math.min(500, prev.network_latency + (Math.random() - 0.5) * 50)),
-        active_connections: Math.max(10, Math.min(100, prev.active_connections + Math.floor((Math.random() - 0.5) * 10)))
-      }));
-
     } catch (error) {
-      console.error('Error fetching system health:', error);
-      toast({
-        title: "Error",
-        description: "Failed to fetch system health data",
-        variant: "destructive"
-      });
-    } finally {
-      setIsLoading(false);
+      console.error('Error loading health data:', error);
     }
-  };
-
   const runHealthCheck = async () => {
     setIsLoading(true);
     try {
-      const services = [
-        'API Gateway', 
-        'Trading Engine', 
-        'ML Engine', 
-        'Database', 
-        'Notification Service',
-        'Risk Management',
-        'Market Data Feed',
-        'WebSocket Service'
-      ];
-      
-      for (const service of services) {
-        const responseTime = Math.random() * 500 + 50;
-        const status = responseTime > 400 ? 'critical' : responseTime > 250 ? 'warning' : 'healthy';
-        
-        await supabase.from('system_health').insert({
-          service_name: service,
-          status,
-          response_time_ms: Math.round(responseTime),
-          error_message: status === 'critical' ? 'High response time detected' : null
-        });
-      }
-
-      await fetchSystemHealth();
-      
+      await loadHealthData();
       toast({
         title: "Health Check Complete",
         description: "System health check completed successfully"
@@ -140,47 +119,6 @@ export const SystemHealthMonitor: React.FC = () => {
       setIsLoading(false);
     }
   };
-
-  const checkAlerts = () => {
-    const activeAlerts = alerts.filter(alert => {
-      if (!alert.enabled) return false;
-      
-      switch (alert.metric) {
-        case 'cpu_usage':
-          return metrics.cpu_usage > alert.threshold;
-        case 'memory_usage':
-          return metrics.memory_usage > alert.threshold;
-        case 'error_rate':
-          return metrics.error_rate > alert.threshold;
-        case 'response_time':
-          return healthChecks.some(check => check.response_time_ms > alert.threshold);
-        default:
-          return false;
-      }
-    });
-
-    if (activeAlerts.length > 0) {
-      toast({
-        title: "System Alert",
-        description: `${activeAlerts.length} metric(s) exceeded threshold`,
-        variant: "destructive"
-      });
-    }
-  };
-
-  useEffect(() => {
-    fetchSystemHealth();
-    
-    if (autoRefresh) {
-      const interval = setInterval(() => {
-        fetchSystemHealth();
-        checkAlerts();
-      }, 30000);
-      return () => clearInterval(interval);
-    }
-  }, [autoRefresh]);
-
-  const getStatusIcon = (status: string) => {
     switch (status) {
       case 'healthy':
         return <CheckCircle className="h-4 w-4 text-green-500" />;

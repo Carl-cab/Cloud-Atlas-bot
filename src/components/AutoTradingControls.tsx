@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,6 +19,7 @@ import {
   Target,
   Activity
 } from 'lucide-react';
+import { useBotState, safeToFixed } from '@/context/BotStateProvider';
 
 interface AutoTradingControlsProps {
   botActive: boolean;
@@ -27,44 +28,35 @@ interface AutoTradingControlsProps {
 }
 
 export const AutoTradingControls = ({ botActive, onToggle, platform }: AutoTradingControlsProps) => {
-  const [settings, setSettings] = useState({
-    maxInvestment: 100, // $100 CAD beta test
-    riskLevel: [0.5], // 0.5% risk per trade
-    takeProfitPercent: 15,
-    stopLossPercent: 8,
-    enableDCA: true,
-    dcaInterval: 4,
-    maxPositions: 4, // 4 max positions as per requirements
-    tradingPairs: ['BTC/USDT', 'ETH/USDT', 'ADA/USDT'],
-    enableGridTrading: false,
-    gridLevels: 10,
-    enableTrendFollowing: true,
-    dailyStopLoss: 2.0 // 2% daily stop loss
-  });
+  const { botStatus, config, updateBotConfig } = useBotState();
 
-  const [activeStrategies, setActiveStrategies] = useState([
+  const handleSettingUpdate = async (field: string, value: any) => {
+    if (!config) return;
+    
+    const updates: any = {};
+    updates[field] = value;
+    await updateBotConfig(updates);
+  };
+
+  const activeStrategies = [
     { name: 'Momentum Trading', status: 'active', profit: '+5.2%' },
     { name: 'Mean Reversion', status: 'paused', profit: '+2.1%' },
     { name: 'Grid Trading', status: 'active', profit: '+3.8%' }
-  ]);
-
-  const updateSetting = (key: string, value: any) => {
-    setSettings(prev => ({ ...prev, [key]: value }));
-  };
+  ];
 
   return (
-    <Card className="card-shadow">
+    <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <Bot className="w-5 h-5 text-primary" />
+          <Bot className="h-5 w-5" />
           Auto Trading Controls
         </CardTitle>
         <CardDescription>
-          Configure your automated trading parameters and strategies
+          Configure trading parameters and manage strategies on {platform}
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <Tabs defaultValue="basic" className="space-y-6">
+        <Tabs defaultValue="basic" className="w-full">
           <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="basic">Basic</TabsTrigger>
             <TabsTrigger value="strategies">Strategies</TabsTrigger>
@@ -72,270 +64,209 @@ export const AutoTradingControls = ({ botActive, onToggle, platform }: AutoTradi
             <TabsTrigger value="advanced">Advanced</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="basic" className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-4">
-                <div>
-                  <Label htmlFor="maxInvestment" className="flex items-center gap-2">
-                    <DollarSign className="w-4 h-4" />
-                    Maximum Investment Per Trade
-                  </Label>
+          <TabsContent value="basic" className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="max-investment">Max Investment (CAD)</Label>
+                <div className="flex items-center space-x-2">
+                  <DollarSign className="h-4 w-4 text-muted-foreground" />
                   <Input
-                    id="maxInvestment"
+                    id="max-investment"
                     type="number"
-                    value={settings.maxInvestment}
-                    onChange={(e) => updateSetting('maxInvestment', Number(e.target.value))}
-                    className="mt-2"
-                  />
-                </div>
-
-                <div>
-                  <Label className="flex items-center gap-2">
-                    <Percent className="w-4 h-4" />
-                    Take Profit (%)
-                  </Label>
-                  <Input
-                    type="number"
-                    value={settings.takeProfitPercent}
-                    onChange={(e) => updateSetting('takeProfitPercent', Number(e.target.value))}
-                    className="mt-2"
-                  />
-                </div>
-
-                <div>
-                  <Label className="flex items-center gap-2">
-                    <Percent className="w-4 h-4" />
-                    Stop Loss (%)
-                  </Label>
-                  <Input
-                    type="number"
-                    value={settings.stopLossPercent}
-                    onChange={(e) => updateSetting('stopLossPercent', Number(e.target.value))}
-                    className="mt-2"
+                    value={config?.capital_cad || 100}
+                    onChange={(e) => handleSettingUpdate('capital_cad', Number(e.target.value))}
+                    className="flex-1"
                   />
                 </div>
               </div>
 
-              <div className="space-y-4">
-                <div>
-                  <Label className="flex items-center gap-2">
-                    <Shield className="w-4 h-4" />
-                    Risk Level: {settings.riskLevel[0]}%/trade
-                  </Label>
-                  <Slider
-                    value={settings.riskLevel}
-                    onValueChange={(value) => updateSetting('riskLevel', value)}
-                    max={2}
-                    min={0.1}
-                    step={0.1}
-                    className="mt-2"
-                  />
-                  <div className="flex justify-between text-xs text-muted-foreground mt-1">
-                    <span>0.1% (Conservative)</span>
-                    <span>2% (Aggressive)</span>
+              <div className="space-y-2">
+                <Label htmlFor="risk-level">Risk Per Trade (%)</Label>
+                <div className="flex items-center space-x-2">
+                  <Percent className="h-4 w-4 text-muted-foreground" />
+                  <div className="flex-1">
+                    <Slider
+                      value={[config?.risk_per_trade || 0.5]}
+                      onValueChange={(value) => handleSettingUpdate('risk_per_trade', value[0])}
+                      max={2}
+                      min={0.1}
+                      step={0.1}
+                    />
                   </div>
+                  <span className="text-sm text-muted-foreground w-12">
+                    {safeToFixed(config?.risk_per_trade || 0.5, 1)}%
+                  </span>
                 </div>
+              </div>
+            </div>
 
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="enableDCA" className="flex items-center gap-2">
-                    <Clock className="w-4 h-4" />
-                    Enable DCA
-                  </Label>
-                  <Switch
-                    id="enableDCA"
-                    checked={settings.enableDCA}
-                    onCheckedChange={(checked) => updateSetting('enableDCA', checked)}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="max-positions">Max Positions</Label>
+                <div className="flex items-center space-x-2">
+                  <Target className="h-4 w-4 text-muted-foreground" />
+                  <Input
+                    id="max-positions"
+                    type="number"
+                    value={config?.max_positions || 4}
+                    onChange={(e) => handleSettingUpdate('max_positions', Number(e.target.value))}
+                    min={1}
+                    max={10}
+                    className="flex-1"
                   />
                 </div>
+              </div>
 
-                <div>
-                  <Label>Max Concurrent Positions</Label>
+              <div className="space-y-2">
+                <Label htmlFor="daily-stop">Daily Stop Loss (%)</Label>
+                <div className="flex items-center space-x-2">
+                  <Shield className="h-4 w-4 text-muted-foreground" />
                   <Input
+                    id="daily-stop"
                     type="number"
-                    value={settings.maxPositions}
-                    onChange={(e) => updateSetting('maxPositions', Number(e.target.value))}
-                    className="mt-2"
+                    value={config?.daily_stop_loss || 2.0}
+                    onChange={(e) => handleSettingUpdate('daily_stop_loss', Number(e.target.value))}
+                    step={0.1}
+                    className="flex-1"
                   />
                 </div>
               </div>
             </div>
 
-            <div className="flex gap-4 pt-4 border-t">
-              <Button 
-                variant={botActive ? "danger" : "trading"} 
-                onClick={onToggle}
-                className="flex-1"
-              >
-                {botActive ? 'Stop Auto Trading' : 'Start Auto Trading'}
-              </Button>
-              <Button variant="outline">
-                <Settings className="w-4 h-4 mr-2" />
-                Test Strategy
-              </Button>
+            <div className="pt-4 border-t">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="font-medium">Trading Status</h4>
+                  <p className="text-sm text-muted-foreground">
+                    Bot is currently {botStatus.isActive ? 'active' : 'inactive'} in {botStatus.mode} mode
+                  </p>
+                </div>
+                <Badge variant={botStatus.isActive ? 'default' : 'secondary'}>
+                  {botStatus.isActive ? 'ACTIVE' : 'INACTIVE'}
+                </Badge>
+              </div>
             </div>
           </TabsContent>
 
-          <TabsContent value="strategies" className="space-y-6">
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold flex items-center gap-2">
-                <Target className="w-5 h-5" />
-                Active Trading Strategies
-              </h3>
-              
+          <TabsContent value="strategies" className="space-y-4">
+            <h4 className="font-medium">Active Strategies</h4>
+            <div className="space-y-3">
               {activeStrategies.map((strategy, index) => (
-                <div key={index} className="flex items-center justify-between p-4 border rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <Activity className="w-4 h-4 text-primary" />
+                <div
+                  key={index}
+                  className="flex items-center justify-between p-3 rounded-lg border"
+                >
+                  <div className="flex items-center space-x-3">
+                    <Activity className="h-4 w-4" />
                     <div>
-                      <h4 className="font-medium">{strategy.name}</h4>
+                      <p className="font-medium">{strategy.name}</p>
                       <p className="text-sm text-muted-foreground">
-                        Performance: <span className="text-success font-medium">{strategy.profit}</span>
+                        P&L: {strategy.profit}
                       </p>
                     </div>
                   </div>
-                  
-                  <div className="flex items-center gap-3">
-                    <Badge 
+                  <div className="flex items-center space-x-2">
+                    <Badge
                       variant={strategy.status === 'active' ? 'default' : 'secondary'}
                     >
                       {strategy.status}
                     </Badge>
-                    <Switch 
+                    <Switch
                       checked={strategy.status === 'active'}
-                      onCheckedChange={() => {
-                        const newStrategies = [...activeStrategies];
-                        newStrategies[index].status = strategy.status === 'active' ? 'paused' : 'active';
-                        setActiveStrategies(newStrategies);
-                      }}
+                      disabled={!botActive}
                     />
                   </div>
                 </div>
               ))}
+            </div>
+          </TabsContent>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="flex items-center justify-between p-4 border rounded-lg">
-                  <Label htmlFor="trendFollowing" className="flex items-center gap-2">
-                    <TrendingUp className="w-4 h-4" />
-                    Trend Following
-                  </Label>
-                  <Switch
-                    id="trendFollowing"
-                    checked={settings.enableTrendFollowing}
-                    onCheckedChange={(checked) => updateSetting('enableTrendFollowing', checked)}
-                  />
+          <TabsContent value="risk" className="space-y-4">
+            <div className="space-y-4">
+              <div>
+                <Label>Risk Used Today</Label>
+                <div className="mt-2">
+                  <div className="flex justify-between text-sm">
+                    <span>Used</span>
+                    <span>{safeToFixed(botStatus.riskUsed)}% / {safeToFixed(config?.daily_stop_loss || 2)}%</span>
+                  </div>
+                  <div className="mt-1 w-full bg-secondary rounded-full h-2">
+                    <div 
+                      className="bg-primary h-2 rounded-full transition-all"
+                      style={{ 
+                        width: `${Math.min((botStatus.riskUsed / (config?.daily_stop_loss || 2)) * 100, 100)}%` 
+                      }}
+                    />
+                  </div>
                 </div>
+              </div>
 
-                <div className="flex items-center justify-between p-4 border rounded-lg">
-                  <Label htmlFor="gridTrading" className="flex items-center gap-2">
-                    <Target className="w-4 h-4" />
-                    Grid Trading
-                  </Label>
-                  <Switch
-                    id="gridTrading"
-                    checked={settings.enableGridTrading}
-                    onCheckedChange={(checked) => updateSetting('enableGridTrading', checked)}
-                  />
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-3 rounded-lg border">
+                  <div className="flex items-center space-x-2">
+                    <Shield className="h-4 w-4 text-emerald-600" />
+                    <span className="text-sm font-medium">Active Positions</span>
+                  </div>
+                  <p className="text-lg font-bold mt-1">
+                    {botStatus.activeTrades} / {config?.max_positions}
+                  </p>
+                </div>
+                
+                <div className="p-3 rounded-lg border">
+                  <div className="flex items-center space-x-2">
+                    <TrendingUp className="h-4 w-4 text-blue-600" />
+                    <span className="text-sm font-medium">Win Rate</span>
+                  </div>
+                  <p className="text-lg font-bold mt-1">{safeToFixed(botStatus.winRate, 1)}%</p>
                 </div>
               </div>
             </div>
           </TabsContent>
 
-          <TabsContent value="risk" className="space-y-6">
+          <TabsContent value="advanced" className="space-y-4">
             <div className="space-y-4">
-              <div className="p-4 bg-danger/10 border border-danger/20 rounded-lg">
-                <div className="flex items-center gap-2 mb-2">
-                  <AlertTriangle className="w-4 h-4 text-danger" />
-                  <h4 className="font-medium text-danger">Risk Management</h4>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  These settings control your maximum exposure and risk tolerance
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="flex items-center justify-between">
                 <div>
-                  <Label>Daily Loss Limit (%)</Label>
-                  <Input 
-                    type="number" 
-                    value={settings.dailyStopLoss}
-                    onChange={(e) => updateSetting('dailyStopLoss', Number(e.target.value))}
-                    className="mt-2" 
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Bot will stop trading if daily losses exceed this percentage (Recommended: 2%)
+                  <Label>Paper Trading Mode</Label>
+                  <p className="text-sm text-muted-foreground">
+                    Use virtual balance for testing ({safeToFixed(config?.paper_trading_balance || 10000)} CAD)
                   </p>
                 </div>
-
-                <div>
-                  <Label>Maximum Drawdown (%)</Label>
-                  <Input type="number" defaultValue="10" className="mt-2" />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Maximum portfolio decline from peak value
-                  </p>
-                </div>
-
-                <div>
-                  <Label>Position Size per Trade (%)</Label>
-                  <Input 
-                    type="number" 
-                    value={settings.riskLevel[0]}
-                    onChange={(e) => updateSetting('riskLevel', [Number(e.target.value)])}
-                    className="mt-2" 
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Percentage of portfolio to risk per trade (Recommended: 0.5%)
-                  </p>
-                </div>
-
-                <div>
-                  <Label>Cool-down Period (hours)</Label>
-                  <Input type="number" defaultValue="24" className="mt-2" />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Time to wait after stop-loss trigger
-                  </p>
-                </div>
-              </div>
-            </div>
-          </TabsContent>
-
-          <TabsContent value="advanced" className="space-y-6">
-            <div className="space-y-4">
-              <div>
-                <Label>Trading Pairs</Label>
-                <div className="flex flex-wrap gap-2 mt-2">
-                  {settings.tradingPairs.map((pair) => (
-                    <Badge key={pair} variant="outline">
-                      {pair}
-                    </Badge>
-                  ))}
-                </div>
-                <Button variant="outline" size="sm" className="mt-2">
-                  Add Pair
-                </Button>
-              </div>
-
-              <div>
-                <Label>DCA Interval (hours)</Label>
-                <Input
-                  type="number"
-                  value={settings.dcaInterval}
-                  onChange={(e) => updateSetting('dcaInterval', Number(e.target.value))}
-                  className="mt-2"
+                <Switch
+                  checked={botStatus.mode === 'paper'}
+                  onCheckedChange={(checked) => 
+                    handleSettingUpdate('mode', checked ? 'paper' : 'live')
+                  }
                 />
               </div>
 
-              <div>
-                <Label>Grid Trading Levels</Label>
-                <Input
-                  type="number"
-                  value={settings.gridLevels}
-                  onChange={(e) => updateSetting('gridLevels', Number(e.target.value))}
-                  className="mt-2"
-                />
+              <div className="pt-4 border-t">
+                <div className="grid grid-cols-2 gap-4">
+                  <Button variant="outline" disabled={!botActive}>
+                    <Settings className="h-4 w-4 mr-2" />
+                    Test Strategy
+                  </Button>
+                  <Button variant="outline" disabled={!botActive}>
+                    <Clock className="h-4 w-4 mr-2" />
+                    View Logs
+                  </Button>
+                </div>
               </div>
             </div>
           </TabsContent>
         </Tabs>
+
+        <div className="mt-6 pt-4 border-t">
+          <div className="flex space-x-2">
+            <Button
+              onClick={onToggle}
+              variant={botActive ? 'destructive' : 'default'}
+              className="flex-1"
+            >
+              {botActive ? 'Stop Auto Trading' : 'Start Auto Trading'}
+            </Button>
+          </div>
+        </div>
       </CardContent>
     </Card>
   );

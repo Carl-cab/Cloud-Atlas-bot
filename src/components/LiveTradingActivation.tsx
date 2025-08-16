@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -20,6 +20,7 @@ import { EmergencyStopModal } from './modals/EmergencyStopModal';
 import { ParameterAdjustmentModal } from './modals/ParameterAdjustmentModal';
 import { SchedulingControls } from './SchedulingControls';
 import { useToast } from '@/hooks/use-toast';
+import { useBotState, safeToFixed } from '@/context/BotStateProvider';
 import { supabase } from '@/integrations/supabase/client';
 
 interface LiveTradingActivationProps {
@@ -28,6 +29,7 @@ interface LiveTradingActivationProps {
 }
 
 export const LiveTradingActivation = ({ isLiveMode, onLiveModeChange }: LiveTradingActivationProps) => {
+  const { botStatus, config, updateBotConfig } = useBotState();
   const [showProceedModal, setShowProceedModal] = useState(false);
   const [showEmergencyModal, setShowEmergencyModal] = useState(false);
   const [showParametersModal, setShowParametersModal] = useState(false);
