@@ -100,6 +100,8 @@ export const SystemHealthMonitor: React.FC = () => {
     } catch (error) {
       console.error('Error loading health data:', error);
     }
+  };
+
   const runHealthCheck = async () => {
     setIsLoading(true);
     try {
@@ -119,19 +121,21 @@ export const SystemHealthMonitor: React.FC = () => {
       setIsLoading(false);
     }
   };
+
+  const getStatusIcon = (status: string) => {
     switch (status) {
       case 'healthy':
-        return <CheckCircle className="h-4 w-4 text-green-500" />;
+        return <CheckCircle className="h-5 w-5 text-emerald-500" />;
       case 'warning':
-        return <AlertTriangle className="h-4 w-4 text-yellow-500" />;
+        return <AlertTriangle className="h-5 w-5 text-amber-500" />;
       case 'critical':
-        return <AlertTriangle className="h-4 w-4 text-red-500" />;
+        return <AlertTriangle className="h-5 w-5 text-red-500" />;
       default:
-        return <Activity className="h-4 w-4 text-muted-foreground" />;
+        return <AlertTriangle className="h-5 w-5 text-gray-500" />;
     }
   };
 
-  const getStatusBadgeVariant = (status: string) => {
+  const getStatusBadgeVariant = (status: string): "default" | "secondary" | "destructive" | "outline" => {
     switch (status) {
       case 'healthy':
         return 'default';
@@ -155,8 +159,10 @@ export const SystemHealthMonitor: React.FC = () => {
   };
 
   const overallHealth = () => {
-    const criticalCount = healthChecks.filter(c => c.status === 'critical').length;
-    const warningCount = healthChecks.filter(c => c.status === 'warning').length;
+    if (healthChecks.length === 0) return 'unknown';
+    
+    const criticalCount = healthChecks.filter(check => check.status === 'critical').length;
+    const warningCount = healthChecks.filter(check => check.status === 'warning').length;
     
     if (criticalCount > 0) return 'critical';
     if (warningCount > 0) return 'warning';

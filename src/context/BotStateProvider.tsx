@@ -117,18 +117,27 @@ export const BotStateProvider: React.FC<BotStateProviderProps> = ({ children }) 
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isTraining, setIsTraining] = useState(false);
   
-  const { toast } = useToast();
+  // Use a try-catch around useToast to handle potential issues
+  let toastFn;
+  try {
+    const { toast } = useToast();
+    toastFn = toast;
+  } catch (error) {
+    console.warn('Toast hook not available in BotStateProvider:', error);
+    toastFn = () => {}; // Fallback no-op function
+  }
 
   const loadBotData = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) {
+        console.log('No authenticated user, skipping data load');
         setIsLoading(false);
         return;
       }
 
       // Load bot config with safe pattern
-      const { data: configData } = await supabase
+      const { data: configData, error: configError } = await supabase
         .from('bot_config')
         .select('*')
         .eq('user_id', user.id)
@@ -136,7 +145,9 @@ export const BotStateProvider: React.FC<BotStateProviderProps> = ({ children }) 
         .limit(1)
         .maybeSingle();
 
-      if (configData) {
+      if (configError) {
+        console.error('Error loading bot config:', configError);
+      } else if (configData) {
         setConfig(configData);
         setBotStatus(prev => ({
           ...prev,
@@ -227,11 +238,13 @@ export const BotStateProvider: React.FC<BotStateProviderProps> = ({ children }) 
 
     } catch (error) {
       console.error('Error loading bot data:', error);
-      toast({
-        title: "Error Loading Data",
-        description: "Failed to load bot data. Please refresh the page.",
-        variant: "destructive",
-      });
+      if (toastFn) {
+        toastFn({
+          title: "Error Loading Data",
+          description: "Failed to load bot data. Please refresh the page.",
+          variant: "destructive",
+        });
+      }
     } finally {
       setIsLoading(false);
     }
@@ -251,17 +264,21 @@ export const BotStateProvider: React.FC<BotStateProviderProps> = ({ children }) 
 
       setConfig(prev => prev ? { ...prev, ...updates } : null);
       
-      toast({
-        title: "Settings Updated",
-        description: "Bot configuration has been updated successfully.",
-      });
+      if (toastFn) {
+        toastFn({
+          title: "Settings Updated",
+          description: "Bot configuration has been updated successfully.",
+        });
+      }
     } catch (error) {
       console.error('Error updating bot config:', error);
-      toast({
-        title: "Update Failed",
-        description: "Failed to update bot configuration.",
-        variant: "destructive",
-      });
+      if (toastFn) {
+        toastFn({
+          title: "Update Failed",
+          description: "Failed to update bot configuration.",
+          variant: "destructive",
+        });
+      }
     }
   };
 
@@ -275,7 +292,10 @@ export const BotStateProvider: React.FC<BotStateProviderProps> = ({ children }) 
   const reloadData = () => loadBotData();
 
   useEffect(() => {
-    loadBotData();
+    // Delay the initial load to ensure all providers are ready
+    const timer = setTimeout(() => {
+      loadBotData();
+    }, 100);
     
     // Set up real-time subscriptions
     const channel = supabase
@@ -311,6 +331,7 @@ export const BotStateProvider: React.FC<BotStateProviderProps> = ({ children }) 
     const interval = setInterval(loadBotData, 30000);
     
     return () => {
+      clearTimeout(timer);
       clearInterval(interval);
       supabase.removeChannel(channel);
     };

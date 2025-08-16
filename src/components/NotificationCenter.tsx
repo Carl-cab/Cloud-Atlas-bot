@@ -53,12 +53,55 @@ export const NotificationCenter = () => {
   
   const [notificationQueue, setNotificationQueue] = useState<any[]>([]);
   const [logs, setLogs] = useState<NotificationLog[]>([]);
+  const [notifications, setNotifications] = useState<NotificationLog[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
-    const loadSettings = async () => {};
-    const loadNotifications = async () => {};
-    const loadLogs = async () => {};
+    const loadSettings = async () => {
+      // Load notification settings logic here
+    };
+    
+    const loadNotifications = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        const { data } = await supabase
+          .from('notification_queue')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(50);
+
+        if (data) {
+          setNotificationQueue(data);
+        }
+      } catch (error) {
+        console.error('Error loading notifications:', error);
+      }
+    };
+    
+    const loadLogs = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        const { data } = await supabase
+          .from('notification_logs')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(100);
+
+        if (data) {
+          setLogs(data);
+        }
+      } catch (error) {
+        console.error('Error loading logs:', error);
+      }
+    };
     
     loadSettings();
     loadNotifications();
@@ -83,11 +126,6 @@ export const NotificationCenter = () => {
       supabase.removeChannel(channel);
     };
   }, []);
-  
-  const [notifications, setNotifications] = useState<NotificationLog[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
-  const { toast } = useToast();
 
   useEffect(() => {
     loadNotificationData();
