@@ -301,14 +301,29 @@ class LiveTradingEngine {
 
   // Database operations
   private async getKrakenCredentials(user_id: string): Promise<KrakenCredentials> {
-    const api_key = Deno.env.get('KRAKEN_API_KEY');
-    const private_key = Deno.env.get('KRAKEN_PRIVATE_KEY');
+    // Get user-specific encrypted credentials via secure credentials function
+    const response = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/secure-credentials`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`
+      },
+      body: JSON.stringify({
+        action: 'get',
+        exchange: 'kraken'
+      })
+    });
+
+    const result = await response.json();
     
-    if (!api_key || !private_key) {
-      throw new Error('Kraken API credentials not configured');
+    if (!result.success || !result.credentials) {
+      throw new Error('User has no valid Kraken API credentials configured');
     }
     
-    return { api_key, private_key };
+    return {
+      api_key: result.credentials.api_key,
+      private_key: result.credentials.api_secret
+    };
   }
 
   private async storeOrder(orderData: any): Promise<void> {
@@ -366,14 +381,39 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  // Apply rate limiting for trading operations
-  const rateLimitResponse = await applyRateLimit(req, rateLimitConfigs.trading);
-  if (rateLimitResponse) {
-    return rateLimitResponse;
-  }
-
   try {
+    // Authenticate the request first
+    const authHeader = req.headers.get('authorization');
+    if (!authHeader) {
+      throw new Error('No authorization header');
+    }
+
+    const supabaseAuth = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_ANON_KEY') ?? ''
+    );
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user }, error: authError } = await supabaseAuth.auth.getUser(token);
+    
+    if (authError || !user) {
+      throw new Error('Invalid or expired token');
+    }
+
+    // Apply rate limiting for trading operations
+    const rateLimitResponse = await applyRateLimit(req, rateLimitConfigs.trading);
+    if (rateLimitResponse) {
+      return rateLimitResponse;
+    }
+
     const { action, ...params } = await req.json();
+
+    // Validate that user_id matches authenticated user
+    if (params.user_id && params.user_id !== user.id) {
+      throw new Error('Access denied: Cannot access another user\'s data');
+    }
+
+    // Use authenticated user ID for all operations
+    params.user_id = user.id;
     const tradingEngine = new LiveTradingEngine();
 
     switch (action) {

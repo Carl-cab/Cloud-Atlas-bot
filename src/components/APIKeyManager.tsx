@@ -62,20 +62,25 @@ export const APIKeyManager = () => {
 
   const loadAPIKeys = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
         toast({ title: "Authentication required", variant: "destructive" });
         return;
       }
       
-      const { data, error } = await supabase
-        .from('api_keys')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
+      // Use secure credentials endpoint to get overview
+      const response = await supabase.functions.invoke('secure-credentials', {
+        body: { action: 'overview' },
+        headers: {
+          Authorization: `Bearer ${session.access_token}`
+        }
+      });
 
-      if (error) throw error;
-      setApiKeys(data || []);
+      if (response.error || !response.data?.success) {
+        throw new Error(response.data?.error || 'Failed to load API keys');
+      }
+
+      setApiKeys(response.data.keys || []);
     } catch (error) {
       console.error('Error loading API keys:', error);
       toast({
@@ -100,24 +105,29 @@ export const APIKeyManager = () => {
 
     setIsAdding(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
         toast({ title: "Authentication required", variant: "destructive" });
         return;
       }
       
-      const { error } = await supabase
-        .from('api_keys')
-        .insert({
-          user_id: user.id,
+      // Use secure credentials endpoint to store encrypted keys
+      const response = await supabase.functions.invoke('secure-credentials', {
+        body: {
+          action: 'store',
           exchange: newKey.exchange,
           api_key: newKey.api_key,
           api_secret: newKey.api_secret,
-          passphrase: newKey.passphrase || null,
-          is_active: true
-        });
+          passphrase: requiresPassphrase(newKey.exchange) ? newKey.passphrase : undefined
+        },
+        headers: {
+          Authorization: `Bearer ${session.access_token}`
+        }
+      });
 
-      if (error) throw error;
+      if (response.error || !response.data?.success) {
+        throw new Error(response.data?.error || 'Failed to store API key');
+      }
 
       await loadAPIKeys();
       setShowAddDialog(false);
@@ -125,14 +135,14 @@ export const APIKeyManager = () => {
       
       toast({
         title: "API Key Added",
-        description: `${newKey.exchange} API key has been securely stored`,
+        description: `${getExchangeName(newKey.exchange)} API key has been securely encrypted and stored`,
       });
 
     } catch (error) {
       console.error('Error adding API key:', error);
       toast({
         title: "Error",
-        description: "Failed to add API key",
+        description: "Failed to add API key. Please try again.",
         variant: "destructive"
       });
     } finally {
@@ -364,20 +374,13 @@ export const APIKeyManager = () => {
                     
                     <div className="mt-2 space-y-1">
                       <div className="flex items-center space-x-2">
-                        <span className="text-xs text-muted-foreground">API Key:</span>
+                        <span className="text-xs text-muted-foreground">Status:</span>
                         <code className="text-xs bg-muted px-1 rounded">
-                          {showSecrets[key.id] ? key.api_key : maskSecret(key.api_key)}
+                          Encrypted and secured
                         </code>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => toggleSecretVisibility(key.id)}
-                        >
-                          {showSecrets[key.id] ? 
-                            <EyeOff className="h-3 w-3" /> : 
-                            <Eye className="h-3 w-3" />
-                          }
-                        </Button>
+                        <span className="text-xs text-muted-foreground">
+                          (API keys are encrypted and not displayed for security)
+                        </span>
                       </div>
                       
                       {/* Security Status Indicators */}

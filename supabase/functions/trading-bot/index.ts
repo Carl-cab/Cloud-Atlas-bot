@@ -526,6 +526,21 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  try {
+    // Authenticate the request
+    const authHeader = req.headers.get('authorization');
+    if (!authHeader) {
+      throw new Error('No authorization header');
+    }
+
+    const supabaseAuth = createClient(supabaseUrl, Deno.env.get('SUPABASE_ANON_KEY')!);
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user }, error: authError } = await supabaseAuth.auth.getUser(token);
+    
+    if (authError || !user) {
+      throw new Error('Invalid or expired token');
+    }
+
   // Apply rate limiting for API endpoints
   const rateLimitResponse = await applyRateLimit(req, rateLimitConfigs.api);
   if (rateLimitResponse) {
