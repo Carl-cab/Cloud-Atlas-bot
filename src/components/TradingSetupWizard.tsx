@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -71,26 +72,53 @@ export const TradingSetupWizard = () => {
   const checkExistingSetup = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      if (!user) {
+        console.log('No user found');
+        return;
+      }
+
+      console.log('Checking setup for user:', user.id);
 
       // Check API keys
-      const { data: apiKeys } = await supabase
+      const { data: apiKeys, error: apiKeysError } = await supabase
         .from('api_keys')
         .select('exchange')
         .eq('user_id', user.id)
         .eq('is_active', true);
 
+      if (apiKeysError) {
+        console.error('Error fetching API keys:', apiKeysError);
+      }
+
       const krakenConfigured = apiKeys?.some(key => key.exchange === 'kraken') || false;
       
-      // Check bot config for paper trading
-      const { data: botConfig } = await supabase
+      // Check bot config with safe reading pattern
+      const { data: botConfig, error: botConfigError } = await supabase
         .from('bot_config')
         .select('*')
         .eq('user_id', user.id)
         .maybeSingle();
 
-      const paperTradingSetup = botConfig?.paper_trading_balance > 0;
-      const riskConfigured = botConfig?.risk_per_trade === 0.5 && botConfig?.daily_stop_loss === 2.0 && botConfig?.max_positions === 4;
+      if (botConfigError) {
+        console.error('Error fetching bot config:', botConfigError);
+      }
+
+      // Check risk settings with safe reading pattern
+      const { data: riskSettingsData, error: riskSettingsError } = await supabase
+        .from('risk_settings')
+        .select('*')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (riskSettingsError) {
+        console.error('Error fetching risk settings:', riskSettingsError);
+      }
+
+      const paperTradingSetup = botConfig?.paper_trading_balance === 10000.00;
+      const riskConfigured = botConfig?.risk_per_trade === 0.5 && 
+                            botConfig?.daily_stop_loss === 2.0 && 
+                            botConfig?.max_positions === 4 &&
+                            riskSettingsData?.max_daily_loss === 500.00;
       
       // Check if validation was completed (stored in localStorage)
       const validationComplete = localStorage.getItem('setup_validation_complete') === 'true';
@@ -105,7 +133,14 @@ export const TradingSetupWizard = () => {
       updateStepCompletion('paper-trading', paperTradingSetup);
       updateStepCompletion('validation', validationComplete);
       
-      console.log('Setup check:', { krakenConfigured, riskConfigured, paperTradingSetup, validationComplete });
+      console.log('Setup check results:', { 
+        krakenConfigured, 
+        riskConfigured, 
+        paperTradingSetup, 
+        validationComplete,
+        botConfig: botConfig ? 'found' : 'not found',
+        riskSettings: riskSettingsData ? 'found' : 'not found'
+      });
     } catch (error) {
       console.error('Error checking setup:', error);
     }
@@ -122,28 +157,32 @@ export const TradingSetupWizard = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // Update risk settings
+      console.log('Configuring risk parameters for user:', user.id);
+
+      // Update risk settings with upsert using onConflict
       const { error: riskError } = await supabase
         .from('risk_settings')
         .upsert({
           user_id: user.id,
-          max_daily_loss: riskSettings.dailyStopLoss,
+          max_daily_loss: 500.00, // Fixed value based on beta plan
           max_position_size: riskSettings.riskPerTrade / 100,
           max_portfolio_risk: 0.05,
           max_symbol_exposure: 0.20,
           circuit_breaker_enabled: true,
           circuit_breaker_threshold: 0.03,
           position_sizing_method: 'fixed_percentage'
+        }, {
+          onConflict: 'user_id'
         });
 
       if (riskError) throw riskError;
 
-      // Update bot config
+      // Update bot config with upsert using onConflict
       const { error: botError } = await supabase
         .from('bot_config')
         .upsert({
           user_id: user.id,
-          risk_per_trade: riskSettings.riskPerTrade,
+          risk_per_trade: 0.5, // Store as 0.5 (not 0.005)
           daily_stop_loss: riskSettings.dailyStopLoss,
           max_positions: riskSettings.maxPositions,
           capital_cad: riskSettings.capitalCAD,
@@ -151,6 +190,8 @@ export const TradingSetupWizard = () => {
           paper_trading_balance: 10000.00,
           paper_trading_fees: 0.001,
           is_active: false
+        }, {
+          onConflict: 'user_id'
         });
 
       if (botError) throw botError;
@@ -162,6 +203,8 @@ export const TradingSetupWizard = () => {
         title: "Risk Parameters Configured",
         description: "Trading parameters set: 0.5% risk/trade, 2% daily stop, 4 max positions"
       });
+
+      console.log('Risk parameters configured successfully');
     } catch (error) {
       console.error('Error configuring risk parameters:', error);
       toast({
@@ -174,6 +217,8 @@ export const TradingSetupWizard = () => {
 
   const validateSystem = async () => {
     try {
+      console.log('Running system validation...');
+      
       // Simulate system validation
       await new Promise(resolve => setTimeout(resolve, 2000));
       
@@ -186,6 +231,8 @@ export const TradingSetupWizard = () => {
         title: "System Validation Complete",
         description: "All components are ready for paper trading"
       });
+
+      console.log('System validation completed');
     } catch (error) {
       console.error('Error validating system:', error);
     }
@@ -195,6 +242,8 @@ export const TradingSetupWizard = () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
+
+      console.log('Starting paper trading for user:', user.id);
 
       const { error } = await supabase
         .from('bot_config')
@@ -210,6 +259,8 @@ export const TradingSetupWizard = () => {
         title: "Paper Trading Started",
         description: "Bot is now active in paper trading mode with $10,000 virtual balance",
       });
+
+      console.log('Paper trading started successfully');
     } catch (error) {
       console.error('Error starting paper trading:', error);
       toast({
