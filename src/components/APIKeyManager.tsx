@@ -14,9 +14,7 @@ import { useToast } from '@/hooks/use-toast';
 interface APIKey {
   id: string;
   exchange: string;
-  api_key: string;
-  api_secret: string;
-  passphrase?: string;
+  exchange_name?: string;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -24,6 +22,8 @@ interface APIKey {
   access_count: number;
   failed_attempts: number;
   locked_until?: string;
+  security_status?: string;
+  status_display?: string;
 }
 
 interface NewAPIKey {
@@ -353,18 +353,25 @@ export const APIKeyManager = () => {
                   <div className="flex-1">
                     <div className="flex items-center space-x-3">
                       <div>
-                        <h4 className="font-medium">{getExchangeName(key.exchange)}</h4>
+                        <h4 className="font-medium">{key.exchange_name || getExchangeName(key.exchange)}</h4>
                         <p className="text-sm text-muted-foreground">
-                          Added {new Date(key.created_at).toLocaleDateString()}
+                          {key.security_status === 'Requires Re-encryption' ? 'Security Update Required' : 
+                           `Added ${new Date(key.created_at).toLocaleDateString()}`}
                         </p>
                       </div>
                       <Badge
-                        variant={key.is_active ? 'default' : 'secondary'}
+                        variant={key.is_active && key.security_status === 'Securely Encrypted' ? 'default' : 
+                                key.security_status === 'Requires Re-encryption' ? 'destructive' : 'secondary'}
                       >
-                        {key.is_active ? (
+                        {key.security_status === 'Securely Encrypted' ? (
                           <>
                             <CheckCircle className="h-3 w-3 mr-1" />
-                            Active
+                            Secure
+                          </>
+                        ) : key.security_status === 'Requires Re-encryption' ? (
+                          <>
+                            <AlertTriangle className="h-3 w-3 mr-1" />
+                            Update Required
                           </>
                         ) : (
                           'Inactive'
@@ -376,11 +383,13 @@ export const APIKeyManager = () => {
                       <div className="flex items-center space-x-2">
                         <span className="text-xs text-muted-foreground">Status:</span>
                         <code className="text-xs bg-muted px-1 rounded">
-                          Encrypted and secured
+                          {key.security_status || 'Unknown'}
                         </code>
-                        <span className="text-xs text-muted-foreground">
-                          (API keys are encrypted and not displayed for security)
-                        </span>
+                        {key.security_status === 'Requires Re-encryption' && (
+                          <span className="text-xs text-destructive">
+                            Please re-enter your API key for enhanced security
+                          </span>
+                        )}
                       </div>
                       
                       {/* Security Status Indicators */}
@@ -411,13 +420,28 @@ export const APIKeyManager = () => {
                   </div>
 
                   <div className="flex items-center space-x-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => toggleAPIKey(key.id, key.is_active)}
-                    >
-                      {key.is_active ? 'Disable' : 'Enable'}
-                    </Button>
+                    {key.security_status === 'Requires Re-encryption' ? (
+                      <Button
+                        variant="default"
+                        size="sm"
+                        onClick={() => {
+                          // Pre-fill the form with the exchange to make re-entry easier
+                          setNewKey(prev => ({ ...prev, exchange: key.exchange }));
+                          setShowAddDialog(true);
+                        }}
+                      >
+                        Update Key
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => toggleAPIKey(key.id, key.is_active)}
+                        disabled={key.security_status !== 'Securely Encrypted'}
+                      >
+                        {key.is_active ? 'Disable' : 'Enable'}
+                      </Button>
+                    )}
                     <Button
                       variant="destructive"
                       size="sm"

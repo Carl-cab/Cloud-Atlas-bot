@@ -1273,6 +1273,10 @@ export type Database = {
         }
         Returns: boolean
       }
+      check_user_has_credentials: {
+        Args: { p_exchange: string }
+        Returns: boolean
+      }
       create_system_alert: {
         Args: {
           p_alert_type: string
@@ -1298,13 +1302,6 @@ export type Database = {
           telegram_chat_id: string
           telegram_enabled: boolean
           trade_alerts: boolean
-        }[]
-      }
-      get_user_credentials_for_server: {
-        Args: { p_exchange: string; p_user_id: string }
-        Returns: {
-          exchange_name: string
-          has_credentials: boolean
         }[]
       }
       lock_api_key_on_failure: {
