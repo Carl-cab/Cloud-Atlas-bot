@@ -12,6 +12,7 @@ import { GlobalCommandPalette } from "@/components/GlobalCommandPalette";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/hooks/useAuth";
 import { usePerformanceMonitor } from "@/hooks/usePerformanceMonitor";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { TrendingUp, BarChart3, Shield, Bell, Activity, Settings, Zap, Key, Rocket } from "lucide-react";
@@ -27,6 +28,7 @@ const Index = () => {
   const { user, signOut } = useAuth();
   const [selectedPlatform, setSelectedPlatform] = useState("bybit");
   const { performanceData, markMilestone } = usePerformanceMonitor();
+  const navigate = useNavigate();
 
   // Mark performance milestone when component mounts
   React.useEffect(() => {
@@ -52,7 +54,7 @@ const Index = () => {
             </p>
             <Button 
               className="w-full" 
-              onClick={() => window.location.href = '/auth'}
+              onClick={() => navigate('/auth')}
             >
               Sign In
             </Button>
