@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -75,8 +76,8 @@ export const RealTimeTradingDashboard = () => {
       if (config) {
         setBotStatus(prev => ({
           ...prev,
-          isActive: config.is_active,
-          balance: config.capital_cad
+          isActive: config.is_active || false,
+          balance: config.capital_cad || 100
         }));
       }
 
@@ -92,9 +93,9 @@ export const RealTimeTradingDashboard = () => {
       if (pnl) {
         setBotStatus(prev => ({
           ...prev,
-          totalPnL: pnl.total_pnl,
-          dailyPnL: pnl.total_pnl,
-          winRate: pnl.win_rate
+          totalPnL: pnl.total_pnl || 0,
+          dailyPnL: pnl.total_pnl || 0,
+          winRate: pnl.win_rate || 0
         }));
       }
 
@@ -122,9 +123,9 @@ export const RealTimeTradingDashboard = () => {
       if (regime) {
         setCurrentRegime({
           regime: regime.regime as 'trend' | 'range' | 'high_volatility',
-          confidence: regime.confidence,
-          trend_strength: regime.trend_strength,
-          volatility: regime.volatility
+          confidence: regime.confidence || 0,
+          trend_strength: regime.trend_strength || 0,
+          volatility: regime.volatility || 0
         });
       }
 
@@ -138,13 +139,13 @@ export const RealTimeTradingDashboard = () => {
 
       if (signal) {
         setLatestSignal({
-          symbol: signal.symbol,
+          symbol: signal.symbol || '',
           signal_type: signal.signal_type as 'buy' | 'sell' | 'hold',
-          confidence: signal.confidence,
-          price: signal.price,
+          confidence: signal.confidence || 0,
+          price: signal.price || 0,
           strategy_type: signal.strategy_type as 'trend_following' | 'mean_reversion',
-          ml_score: signal.ml_score,
-          timestamp: signal.timestamp
+          ml_score: signal.ml_score || 0,
+          timestamp: signal.timestamp || new Date().toISOString()
         });
       }
 
@@ -201,7 +202,7 @@ export const RealTimeTradingDashboard = () => {
       
       toast({
         title: 'Market Analysis Complete',
-        description: `Market regime: ${data.regime.regime} (${(data.regime.confidence * 100).toFixed(1)}% confidence)`,
+        description: `Market regime: ${data.regime.regime} (${((data.regime.confidence || 0) * 100).toFixed(1)}% confidence)`,
       });
       
       await loadBotData(); // Refresh data
@@ -260,7 +261,7 @@ export const RealTimeTradingDashboard = () => {
 
       toast({
         title: 'Model Training Complete',
-        description: `New model trained with ${(data.model.accuracy * 100).toFixed(1)}% accuracy`,
+        description: `New model trained with ${((data.model.accuracy || 0) * 100).toFixed(1)}% accuracy`,
       });
     } catch (error) {
       toast({
@@ -290,6 +291,14 @@ export const RealTimeTradingDashboard = () => {
     }
   };
 
+  // Helper function to safely format numbers
+  const safeToFixed = (value: number | null | undefined, decimals: number = 2): string => {
+    if (value === null || value === undefined || isNaN(value)) {
+      return '0.00';
+    }
+    return value.toFixed(decimals);
+  };
+
   return (
     <div className="space-y-6 p-6">
       <div className="flex items-center justify-between">
@@ -315,7 +324,7 @@ export const RealTimeTradingDashboard = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Balance</p>
-                <p className="text-2xl font-bold">${botStatus.balance.toFixed(2)}</p>
+                <p className="text-2xl font-bold">${safeToFixed(botStatus.balance)}</p>
               </div>
               <TrendingUp className="h-4 w-4 text-muted-foreground" />
             </div>
@@ -327,11 +336,11 @@ export const RealTimeTradingDashboard = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Daily P&L</p>
-                <p className={`text-2xl font-bold ${botStatus.dailyPnL >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                  ${botStatus.dailyPnL.toFixed(2)}
+                <p className={`text-2xl font-bold ${(botStatus.dailyPnL || 0) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                  ${safeToFixed(botStatus.dailyPnL)}
                 </p>
               </div>
-              {botStatus.dailyPnL >= 0 ? 
+              {(botStatus.dailyPnL || 0) >= 0 ? 
                 <TrendingUp className="h-4 w-4 text-emerald-600" /> : 
                 <TrendingDown className="h-4 w-4 text-red-600" />
               }
@@ -344,7 +353,7 @@ export const RealTimeTradingDashboard = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Win Rate</p>
-                <p className="text-2xl font-bold">{(botStatus.winRate * 100).toFixed(1)}%</p>
+                <p className="text-2xl font-bold">{safeToFixed((botStatus.winRate || 0) * 100, 1)}%</p>
               </div>
               <Shield className="h-4 w-4 text-muted-foreground" />
             </div>
@@ -356,7 +365,7 @@ export const RealTimeTradingDashboard = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Active Trades</p>
-                <p className="text-2xl font-bold">{botStatus.activeTrades}</p>
+                <p className="text-2xl font-bold">{botStatus.activeTrades || 0}</p>
               </div>
               <AlertTriangle className="h-4 w-4 text-muted-foreground" />
             </div>
@@ -388,7 +397,7 @@ export const RealTimeTradingDashboard = () => {
                   Market Regime: {currentRegime.regime.toUpperCase()}
                 </CardTitle>
                 <CardDescription>
-                  Confidence: {(currentRegime.confidence * 100).toFixed(1)}%
+                  Confidence: {safeToFixed((currentRegime.confidence || 0) * 100, 1)}%
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -396,16 +405,16 @@ export const RealTimeTradingDashboard = () => {
                   <div>
                     <div className="flex justify-between text-sm">
                       <span>Trend Strength</span>
-                      <span>{(Math.abs(currentRegime.trend_strength) * 100).toFixed(1)}%</span>
+                      <span>{safeToFixed(Math.abs(currentRegime.trend_strength || 0) * 100, 1)}%</span>
                     </div>
-                    <Progress value={Math.abs(currentRegime.trend_strength) * 100} className="mt-2" />
+                    <Progress value={Math.abs(currentRegime.trend_strength || 0) * 100} className="mt-2" />
                   </div>
                   <div>
                     <div className="flex justify-between text-sm">
                       <span>Volatility</span>
-                      <span>{(currentRegime.volatility * 100).toFixed(2)}%</span>
+                      <span>{safeToFixed((currentRegime.volatility || 0) * 100)}%</span>
                     </div>
-                    <Progress value={currentRegime.volatility * 100} className="mt-2" />
+                    <Progress value={(currentRegime.volatility || 0) * 100} className="mt-2" />
                   </div>
                 </div>
               </CardContent>
@@ -438,15 +447,15 @@ export const RealTimeTradingDashboard = () => {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <p className="text-sm text-muted-foreground">Price</p>
-                    <p className="text-lg font-semibold">${latestSignal.price.toFixed(2)}</p>
+                    <p className="text-lg font-semibold">${safeToFixed(latestSignal.price)}</p>
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">Confidence</p>
-                    <p className="text-lg font-semibold">{(latestSignal.confidence * 100).toFixed(1)}%</p>
+                    <p className="text-lg font-semibold">{safeToFixed((latestSignal.confidence || 0) * 100, 1)}%</p>
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">ML Score</p>
-                    <p className="text-lg font-semibold">{(latestSignal.ml_score * 100).toFixed(1)}%</p>
+                    <p className="text-lg font-semibold">{safeToFixed((latestSignal.ml_score || 0) * 100, 1)}%</p>
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">Timestamp</p>
