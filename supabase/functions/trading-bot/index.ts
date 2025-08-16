@@ -526,6 +526,12 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  // Apply rate limiting for API endpoints
+  const rateLimitResponse = await applyRateLimit(req, rateLimitConfigs.api);
+  if (rateLimitResponse) {
+    return rateLimitResponse;
+  }
+
   try {
     // Authenticate the request
     const authHeader = req.headers.get('authorization');
@@ -541,13 +547,6 @@ serve(async (req) => {
       throw new Error('Invalid or expired token');
     }
 
-  // Apply rate limiting for API endpoints
-  const rateLimitResponse = await applyRateLimit(req, rateLimitConfigs.api);
-  if (rateLimitResponse) {
-    return rateLimitResponse;
-  }
-
-  try {
     const { action, symbol = 'XBTUSD', userId } = await req.json();
     
     const krakenAPI = new KrakenAPI(KRAKEN_API_KEY, KRAKEN_PRIVATE_KEY);
