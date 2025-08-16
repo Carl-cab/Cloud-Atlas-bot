@@ -549,6 +549,7 @@ export type Database = {
           signal_type: string
           symbol: string
           updated_at: string
+          user_id: string | null
         }
         Insert: {
           confidence: number
@@ -560,6 +561,7 @@ export type Database = {
           signal_type: string
           symbol: string
           updated_at?: string
+          user_id?: string | null
         }
         Update: {
           confidence?: number
@@ -571,6 +573,7 @@ export type Database = {
           signal_type?: string
           symbol?: string
           updated_at?: string
+          user_id?: string | null
         }
         Relationships: []
       }
