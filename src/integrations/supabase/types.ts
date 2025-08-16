@@ -1239,8 +1239,16 @@ export type Database = {
         }
         Returns: string
       }
+      decrypt_credential: {
+        Args: { encrypted_credential: string }
+        Returns: string
+      }
       encrypt_api_credential: {
         Args: { credential: string; user_salt: string }
+        Returns: string
+      }
+      encrypt_credential: {
+        Args: { credential: string }
         Returns: string
       }
       get_api_credentials: {
@@ -1312,6 +1320,15 @@ export type Database = {
           p_unit?: string
         }
         Returns: undefined
+      }
+      store_api_credentials: {
+        Args: {
+          p_api_key: string
+          p_api_secret: string
+          p_exchange: string
+          p_passphrase?: string
+        }
+        Returns: string
       }
       upsert_notification_settings: {
         Args: {
