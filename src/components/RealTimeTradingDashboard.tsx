@@ -12,6 +12,7 @@ import { useToast } from '@/hooks/use-toast';
 
 interface BotStatus {
   isActive: boolean;
+  mode: 'paper' | 'live';
   balance: number;
   totalPnL: number;
   dailyPnL: number;
@@ -40,7 +41,8 @@ interface TradingSignal {
 export const RealTimeTradingDashboard = () => {
   const [botStatus, setBotStatus] = useState<BotStatus>({
     isActive: false,
-    balance: 100,
+    mode: 'paper',
+    balance: 10000,
     totalPnL: 0,
     dailyPnL: 0,
     winRate: 0,
@@ -57,8 +59,33 @@ export const RealTimeTradingDashboard = () => {
 
   useEffect(() => {
     loadBotData();
+    
+    // Set up real-time subscriptions
+    const channel = supabase
+      .channel('dashboard-updates')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'bot_config'
+      }, () => loadBotData())
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'trading_positions'
+      }, () => loadBotData())
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'daily_pnl'
+      }, () => loadBotData())
+      .subscribe();
+
     const interval = setInterval(loadBotData, 30000); // Update every 30 seconds
-    return () => clearInterval(interval);
+    
+    return () => {
+      clearInterval(interval);
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const loadBotData = async () => {
@@ -66,38 +93,46 @@ export const RealTimeTradingDashboard = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // Load bot config
+      // Load bot config with safe pattern
       const { data: config } = await supabase
         .from('bot_config')
         .select('*')
         .eq('user_id', user.id)
-        .single();
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
-      if (config) {
-        setBotStatus(prev => ({
-          ...prev,
-          isActive: config.is_active || false,
-          balance: config.capital_cad || 100
-        }));
-      }
+      const mode = (config?.mode || 'paper') as 'paper' | 'live';
+      const balance = mode === 'paper' 
+        ? (config?.paper_trading_balance || 10000)
+        : (config?.capital_cad || 100);
 
-      // Load latest P&L
+      setBotStatus(prev => ({
+        ...prev,
+        isActive: config?.is_active || false,
+        mode: mode,
+        balance: balance
+      }));
+
+      // Load latest P&L with safe pattern
       const today = new Date().toISOString().split('T')[0];
       const { data: pnl } = await supabase
         .from('daily_pnl')
         .select('*')
         .eq('user_id', user.id)
         .eq('date', today)
-        .single();
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
-      if (pnl) {
-        setBotStatus(prev => ({
-          ...prev,
-          totalPnL: pnl.total_pnl || 0,
-          dailyPnL: pnl.total_pnl || 0,
-          winRate: pnl.win_rate || 0
-        }));
-      }
+      const winRate = pnl?.win_rate ? pnl.win_rate / 100 : 0; // Convert percentage to decimal
+
+      setBotStatus(prev => ({
+        ...prev,
+        totalPnL: pnl?.total_pnl || 0,
+        dailyPnL: pnl?.total_pnl || 0,
+        winRate: winRate
+      }));
 
       // Load active positions
       const { data: positions } = await supabase
@@ -112,13 +147,13 @@ export const RealTimeTradingDashboard = () => {
         riskUsed: positions?.reduce((sum, pos) => sum + (pos.risk_amount || 0), 0) || 0
       }));
 
-      // Load latest regime
+      // Load latest regime with safe pattern
       const { data: regime } = await supabase
         .from('market_regimes')
         .select('*')
         .order('timestamp', { ascending: false })
         .limit(1)
-        .single();
+        .maybeSingle();
 
       if (regime) {
         setCurrentRegime({
@@ -129,13 +164,13 @@ export const RealTimeTradingDashboard = () => {
         });
       }
 
-      // Load latest signal
+      // Load latest signal with safe pattern
       const { data: signal } = await supabase
         .from('strategy_signals')
         .select('*')
         .order('timestamp', { ascending: false })
         .limit(1)
-        .single();
+        .maybeSingle();
 
       if (signal) {
         setLatestSignal({
@@ -307,6 +342,9 @@ export const RealTimeTradingDashboard = () => {
           <p className="text-muted-foreground">Real-time crypto trading with machine learning</p>
         </div>
         <div className="flex items-center space-x-4">
+          <Badge variant={botStatus.mode === 'paper' ? 'outline' : 'default'}>
+            {botStatus.mode === 'paper' ? 'PAPER TRADING' : 'LIVE TRADING'}
+          </Badge>
           <Badge variant={botStatus.isActive ? 'default' : 'secondary'}>
             {botStatus.isActive ? 'ACTIVE' : 'INACTIVE'}
           </Badge>
@@ -323,7 +361,9 @@ export const RealTimeTradingDashboard = () => {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Balance</p>
+                <p className="text-sm font-medium text-muted-foreground">
+                  {botStatus.mode === 'paper' ? 'Paper Balance' : 'Live Balance'}
+                </p>
                 <p className="text-2xl font-bold">${safeToFixed(botStatus.balance)}</p>
               </div>
               <TrendingUp className="h-4 w-4 text-muted-foreground" />
