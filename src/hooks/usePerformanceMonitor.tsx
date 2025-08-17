@@ -245,9 +245,11 @@ export const usePerformanceMonitor = (config: PerformanceConfig = {
   }, []);
 
   useEffect(() => {
-    const cleanup = startMonitoring();
-    return cleanup;
-  }, [startMonitoring]);
+    if (config.sampleRate > Math.random()) {
+      const cleanup = startMonitoring();
+      return cleanup;
+    }
+  }, []); // Remove startMonitoring from dependencies to prevent infinite loop
 
   return {
     performanceData,

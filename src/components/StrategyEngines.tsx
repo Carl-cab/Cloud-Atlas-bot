@@ -149,7 +149,12 @@ export const StrategyEngines: React.FC = () => {
         }
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Strategy start error:', error);
+        throw new Error(error.message || 'Failed to start strategy engines');
+      }
+
+      console.log('Strategy engines started successfully:', data);
 
       toast({
         title: "Strategy Engines Started",
@@ -158,9 +163,24 @@ export const StrategyEngines: React.FC = () => {
     } catch (error) {
       console.error('Error starting strategy engines:', error);
       setIsRunning(false);
+      
+      // More specific error messages
+      let errorMessage = "Failed to start strategy engines";
+      if (error instanceof Error) {
+        if (error.message.includes('market data')) {
+          errorMessage = "No market data available. Try refreshing or selecting a different symbol.";
+        } else if (error.message.includes('authentication')) {
+          errorMessage = "Authentication failed. Please sign in again.";
+        } else if (error.message.includes('rate limit')) {
+          errorMessage = "Too many requests. Please wait a moment and try again.";
+        } else {
+          errorMessage = error.message;
+        }
+      }
+      
       toast({
-        title: "Error",
-        description: "Failed to start strategy engines",
+        title: "Strategy Start Failed",
+        description: errorMessage,
         variant: "destructive",
       });
     }
@@ -185,7 +205,12 @@ export const StrategyEngines: React.FC = () => {
         }
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Signal generation error:', error);
+        throw new Error(error.message || 'Failed to generate signal');
+      }
+
+      console.log('Signal generated successfully:', data);
 
       toast({
         title: "Signal Generated",
@@ -196,9 +221,21 @@ export const StrategyEngines: React.FC = () => {
       setTimeout(() => fetchRecentSignals(), 1000);
     } catch (error) {
       console.error('Error generating signal:', error);
+      
+      let errorMessage = "Failed to generate signal";
+      if (error instanceof Error) {
+        if (error.message.includes('market data')) {
+          errorMessage = "No market data available. The system will fetch fresh data automatically.";
+        } else if (error.message.includes('symbol')) {
+          errorMessage = `Invalid symbol ${selectedSymbol}. Please select a different trading pair.`;
+        } else {
+          errorMessage = error.message;
+        }
+      }
+      
       toast({
-        title: "Error",
-        description: "Failed to generate signal",
+        title: "Signal Generation Failed",
+        description: errorMessage,
         variant: "destructive",
       });
     }

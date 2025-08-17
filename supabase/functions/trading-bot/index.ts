@@ -547,7 +547,11 @@ serve(async (req) => {
       throw new Error('Invalid or expired token');
     }
 
-    const { action, symbol = 'XBTUSD', userId } = await req.json();
+    // Parse request body only once to avoid "Body already consumed" error
+    const requestBody = await req.json();
+    const { action, symbol = 'XBTUSD', userId, strategy, config = {}, strategies = [], config: strategyConfig = {} } = requestBody;
+    
+    console.log(`Trading bot action: ${action}, symbol: ${symbol}, user: ${user.id}`);
     
     const krakenAPI = new KrakenAPI(KRAKEN_API_KEY, KRAKEN_PRIVATE_KEY);
     const mlEngine = new MLEngine();
@@ -598,7 +602,6 @@ serve(async (req) => {
         });
 
       case 'generate_signal':
-        const { strategy, config = {} } = await req.json();
         
         // Get recent market data
         const { data: recentData } = await supabase
@@ -609,10 +612,62 @@ serve(async (req) => {
           .limit(50);
         
         if (!recentData || recentData.length === 0) {
-          return new Response(JSON.stringify({ error: 'No market data available' }), {
-            status: 400,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-          });
+          console.log(`No market data for ${symbol}, fetching from Kraken...`);
+          
+          // Fallback: fetch fresh data from Kraken
+          try {
+            const ohlcData = await krakenAPI.getOHLCData(symbol);
+            const marketData = ohlcData.result[Object.keys(ohlcData.result)[0]];
+            
+            if (!marketData || marketData.length === 0) {
+              throw new Error('No data from Kraken');
+            }
+            
+            // Store the fresh data
+            const formattedData = marketData.slice(-50).map((candle: any) => ({
+              symbol,
+              timestamp: new Date(candle[0] * 1000).toISOString(),
+              timeframe: '15m',
+              open: parseFloat(candle[1]),
+              high: parseFloat(candle[2]),
+              low: parseFloat(candle[3]),
+              close: parseFloat(candle[4]),
+              volume: parseFloat(candle[6])
+            }));
+            
+            await supabase.from('market_data').upsert(formattedData);
+            
+            // Use the fresh data for signal generation
+            const strategySignal = generateStrategySignal(strategy, formattedData, config);
+            
+            await supabase.from('strategy_signals').insert({
+              symbol,
+              signal_type: strategySignal.type,
+              strategy_type: strategy,
+              confidence: strategySignal.confidence,
+              price: strategySignal.price,
+              timestamp: new Date().toISOString(),
+              indicators: strategySignal.indicators,
+              ml_score: strategySignal.mlScore
+            });
+            
+            return new Response(JSON.stringify({ 
+              signal: strategySignal,
+              message: 'Signal generated with fresh market data'
+            }), {
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+            
+          } catch (fallbackError) {
+            console.error('Fallback data fetch failed:', fallbackError);
+            return new Response(JSON.stringify({ 
+              error: 'No market data available and fallback failed',
+              details: fallbackError.message 
+            }), {
+              status: 400,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
         }
         
         const strategySignal = generateStrategySignal(strategy, recentData, config);
@@ -634,7 +689,6 @@ serve(async (req) => {
         });
 
       case 'start_strategies':
-        const { strategies = [], config: strategyConfig = {} } = await req.json();
         
         // Generate initial signals for each strategy
         for (const strategy of strategies) {
