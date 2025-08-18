@@ -85,10 +85,11 @@ class SecureCredentialManager {
     return btoa(String.fromCharCode(...combined));
   }
 
-  // Enhanced decryption with AAD verification
+  // Enhanced decryption with AAD verification and legacy fallback
   private async decrypt(encryptedData: string, userId: string, exchange: string): Promise<string> {
     if (!encryptedData || encryptedData === '') return '';
     
+    // Try new encryption method first (v2 with HKDF and AAD)
     try {
       const key = await this.deriveKey(`${userId}:${exchange}`);
       const aad = new TextEncoder().encode(`${userId}:${exchange}:v2`);
@@ -104,19 +105,69 @@ class SecureCredentialManager {
       );
       
       return new TextDecoder().decode(decrypted);
-    } catch (error) {
-      console.error('Decryption failed:', error);
-      // Log security event for failed decryption attempts
-      await this.supabase
-        .from('security_audit_log')
-        .insert({
-          user_id: userId,
-          action: 'DECRYPTION_FAILURE',
-          resource: 'api_keys',
-          success: false,
-          metadata: { exchange, error: 'Decryption failed' }
-        });
-      return '';
+    } catch (v2Error) {
+      console.log('V2 decryption failed, trying legacy methods:', v2Error.message);
+      
+      // Try legacy method 1: Basic AES-GCM without AAD
+      try {
+        const key = await this.deriveKey(`${userId}:${exchange}`);
+        
+        const combined = new Uint8Array(atob(encryptedData).split('').map(c => c.charCodeAt(0)));
+        const iv = combined.slice(0, 12);
+        const encrypted = combined.slice(12);
+        
+        const decrypted = await crypto.subtle.decrypt(
+          { name: 'AES-GCM', iv },
+          key,
+          encrypted
+        );
+        
+        const result = new TextDecoder().decode(decrypted);
+        console.log('Successfully decrypted using legacy method 1');
+        return result;
+      } catch (legacyError1) {
+        console.log('Legacy method 1 failed:', legacyError1.message);
+        
+        // Try legacy method 2: Direct encryption key without HKDF
+        try {
+          const directKey = await crypto.subtle.importKey(
+            'raw',
+            new TextEncoder().encode(ENCRYPTION_KEY),
+            { name: 'AES-GCM' },
+            false,
+            ['decrypt']
+          );
+          
+          const combined = new Uint8Array(atob(encryptedData).split('').map(c => c.charCodeAt(0)));
+          const iv = combined.slice(0, 12);
+          const encrypted = combined.slice(12);
+          
+          const decrypted = await crypto.subtle.decrypt(
+            { name: 'AES-GCM', iv },
+            directKey,
+            encrypted
+          );
+          
+          const result = new TextDecoder().decode(decrypted);
+          console.log('Successfully decrypted using legacy method 2');
+          return result;
+        } catch (legacyError2) {
+          console.log('All decryption methods failed');
+          console.error('Final decryption error:', legacyError2);
+          
+          // Log security event for failed decryption attempts
+          await this.supabase
+            .from('security_audit_log')
+            .insert({
+              user_id: userId,
+              action: 'DECRYPTION_FAILURE',
+              resource: 'api_keys',
+              success: false,
+              metadata: { exchange, error: 'All decryption methods failed', attempts: 3 }
+            });
+          return '';
+        }
+      }
     }
   }
 
@@ -209,7 +260,7 @@ class SecureCredentialManager {
 
       const { data, error } = await this.supabase
         .from('api_keys')
-        .select('api_key, api_secret, passphrase, is_active, locked_until')
+        .select('id, api_key, api_secret, passphrase, is_active, locked_until, encryption_version')
         .eq('user_id', userId)
         .eq('exchange', exchange)
         .eq('is_active', true)
@@ -229,6 +280,63 @@ class SecureCredentialManager {
 
       if (!decryptedApiKey || !decryptedApiSecret) {
         return { success: false, error: 'Failed to decrypt credentials' };
+      }
+
+      // Auto-migrate legacy keys to new encryption when successfully decrypted
+      if (!data.encryption_version || data.encryption_version !== 'v2') {
+        try {
+          console.log('Auto-migrating legacy key to v2 encryption for user:', userId, 'exchange:', exchange);
+          
+          const newEncryptedApiKey = await this.encrypt(decryptedApiKey, userId, exchange);
+          const newEncryptedApiSecret = await this.encrypt(decryptedApiSecret, userId, exchange);
+          const newEncryptedPassphrase = decryptedPassphrase ? await this.encrypt(decryptedPassphrase, userId, exchange) : null;
+
+          await this.supabase
+            .from('api_keys')
+            .update({
+              api_key: newEncryptedApiKey,
+              api_secret: newEncryptedApiSecret,
+              passphrase: newEncryptedPassphrase,
+              encryption_version: 'v2',
+              encryption_key_id: 'edge_v2',
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', data.id);
+
+          // Log the successful migration
+          await this.supabase
+            .from('security_audit_log')
+            .insert({
+              user_id: userId,
+              action: 'KEY_AUTO_MIGRATION_SUCCESS',
+              resource: 'api_keys',
+              success: true,
+              metadata: { 
+                key_id: data.id,
+                exchange,
+                old_version: data.encryption_version || 'unknown',
+                new_version: 'v2'
+              }
+            });
+
+          console.log('Successfully auto-migrated legacy key to v2 encryption');
+        } catch (migrationError) {
+          console.error('Failed to auto-migrate legacy key:', migrationError);
+          // Don't fail the request if migration fails, just log it
+          await this.supabase
+            .from('security_audit_log')
+            .insert({
+              user_id: userId,
+              action: 'KEY_AUTO_MIGRATION_FAILED',
+              resource: 'api_keys',
+              success: false,
+              metadata: { 
+                key_id: data.id,
+                exchange,
+                error: migrationError.message
+              }
+            });
+        }
       }
 
       return {
