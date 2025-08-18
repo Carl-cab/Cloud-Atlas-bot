@@ -53,6 +53,39 @@ export type Database = {
         }
         Relationships: []
       }
+      api_key_security_audit: {
+        Row: {
+          action: string
+          api_key_id: string | null
+          audit_timestamp: string | null
+          encryption_status: string
+          id: string
+          metadata: Json | null
+          security_level: string
+          user_id: string
+        }
+        Insert: {
+          action: string
+          api_key_id?: string | null
+          audit_timestamp?: string | null
+          encryption_status: string
+          id?: string
+          metadata?: Json | null
+          security_level: string
+          user_id: string
+        }
+        Update: {
+          action?: string
+          api_key_id?: string | null
+          audit_timestamp?: string | null
+          encryption_status?: string
+          id?: string
+          metadata?: Json | null
+          security_level?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       api_keys: {
         Row: {
           access_count: number | null
@@ -60,10 +93,12 @@ export type Database = {
           api_secret: string
           created_at: string | null
           encryption_key_id: string | null
+          encryption_version: string | null
           exchange: string
           failed_attempts: number | null
           id: string
           is_active: boolean | null
+          key_fingerprint: string | null
           last_accessed: string | null
           last_used: string | null
           locked_until: string | null
@@ -78,10 +113,12 @@ export type Database = {
           api_secret: string
           created_at?: string | null
           encryption_key_id?: string | null
+          encryption_version?: string | null
           exchange: string
           failed_attempts?: number | null
           id?: string
           is_active?: boolean | null
+          key_fingerprint?: string | null
           last_accessed?: string | null
           last_used?: string | null
           locked_until?: string | null
@@ -96,10 +133,12 @@ export type Database = {
           api_secret?: string
           created_at?: string | null
           encryption_key_id?: string | null
+          encryption_version?: string | null
           exchange?: string
           failed_attempts?: number | null
           id?: string
           is_active?: boolean | null
+          key_fingerprint?: string | null
           last_accessed?: string | null
           last_used?: string | null
           locked_until?: string | null
@@ -1262,6 +1301,60 @@ export type Database = {
         }
         Relationships: []
       }
+      api_keys_security_status: {
+        Row: {
+          access_count: number | null
+          created_at: string | null
+          encryption_status: string | null
+          encryption_version: string | null
+          exchange: string | null
+          failed_attempts: number | null
+          id: string | null
+          is_active: boolean | null
+          key_fingerprint: string | null
+          last_accessed: string | null
+          locked_until: string | null
+          security_display: string | null
+          security_score: number | null
+          updated_at: string | null
+          user_id: string | null
+        }
+        Insert: {
+          access_count?: number | null
+          created_at?: string | null
+          encryption_status?: never
+          encryption_version?: string | null
+          exchange?: string | null
+          failed_attempts?: number | null
+          id?: string | null
+          is_active?: boolean | null
+          key_fingerprint?: string | null
+          last_accessed?: string | null
+          locked_until?: string | null
+          security_display?: never
+          security_score?: never
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          access_count?: number | null
+          created_at?: string | null
+          encryption_status?: never
+          encryption_version?: string | null
+          exchange?: string | null
+          failed_attempts?: number | null
+          id?: string | null
+          is_active?: boolean | null
+          key_fingerprint?: string | null
+          last_accessed?: string | null
+          locked_until?: string | null
+          security_display?: never
+          security_score?: never
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       check_rate_limit: {
@@ -1276,6 +1369,14 @@ export type Database = {
       check_user_has_credentials: {
         Args: { p_exchange: string }
         Returns: boolean
+      }
+      create_key_fingerprint: {
+        Args: {
+          encryption_version_input?: string
+          exchange_input: string
+          user_id_input: string
+        }
+        Returns: string
       }
       create_system_alert: {
         Args: {
@@ -1307,6 +1408,17 @@ export type Database = {
       lock_api_key_on_failure: {
         Args: { p_api_key_id: string }
         Returns: undefined
+      }
+      log_api_key_security_event: {
+        Args: {
+          p_action: string
+          p_api_key_id: string
+          p_encryption_status: string
+          p_metadata?: Json
+          p_security_level?: string
+          p_user_id: string
+        }
+        Returns: string
       }
       log_security_event: {
         Args: {
@@ -1368,6 +1480,10 @@ export type Database = {
       }
       validate_api_key_access: {
         Args: { p_exchange: string; p_user_id: string }
+        Returns: boolean
+      }
+      validate_api_key_encryption: {
+        Args: { encrypted_data: string; encryption_version?: string }
         Returns: boolean
       }
     }

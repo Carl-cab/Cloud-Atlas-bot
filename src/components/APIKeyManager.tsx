@@ -24,6 +24,13 @@ interface APIKey {
   locked_until?: string;
   security_status?: string;
   status_display?: string;
+  // Enhanced security properties
+  encryption_version?: string;
+  encryption_status?: string;
+  security_display?: string;
+  security_score?: number;
+  security_recommendation?: string;
+  key_fingerprint?: string;
 }
 
 interface NewAPIKey {
@@ -259,9 +266,9 @@ export const APIKeyManager = () => {
       <Alert>
         <Shield className="h-4 w-4" />
         <AlertDescription>
-          <strong>Enhanced Security:</strong> All API keys are encrypted using AES-256-GCM with HKDF key derivation 
-          and authenticated encryption. Rate limiting protects against automated attacks. 
-          Never share your API keys or grant withdrawal permissions.
+          <strong>Military-Grade Security:</strong> All API keys are encrypted using AES-256-GCM with HKDF key derivation, 
+          database-level validation, and comprehensive audit logging. Each key is validated for encryption quality 
+          and tracked with security fingerprints. Never share your API keys or grant withdrawal permissions.
         </AlertDescription>
       </Alert>
 
@@ -381,46 +388,37 @@ export const APIKeyManager = () => {
                   className="flex items-center justify-between p-4 border rounded-lg"
                 >
                   <div className="flex-1">
-                    <div className="flex items-center space-x-3">
-                      <div>
-                        <h4 className="font-medium">{key.exchange_name || getExchangeName(key.exchange)}</h4>
-                        <p className="text-sm text-muted-foreground">
-                          {key.security_status === 'Requires Re-encryption' ? 'Security Update Required' : 
-                           `Added ${new Date(key.created_at).toLocaleDateString()}`}
-                        </p>
-                      </div>
-                      <Badge
-                        variant={key.is_active && key.security_status === 'Securely Encrypted' ? 'default' : 
-                                key.security_status === 'Requires Re-encryption' ? 'destructive' : 'secondary'}
-                      >
-                        {key.security_status === 'Securely Encrypted' ? (
-                          <>
-                            <CheckCircle className="h-3 w-3 mr-1" />
-                            Secure
-                          </>
-                        ) : key.security_status === 'Requires Re-encryption' ? (
-                          <>
-                            <AlertTriangle className="h-3 w-3 mr-1" />
-                            Update Required
-                          </>
-                        ) : (
-                          'Inactive'
-                        )}
-                      </Badge>
-                    </div>
-                    
-                    <div className="mt-2 space-y-1">
-                      <div className="flex items-center space-x-2">
-                        <span className="text-xs text-muted-foreground">Status:</span>
-                        <code className="text-xs bg-muted px-1 rounded">
-                          {key.security_status || 'Unknown'}
-                        </code>
-                        {key.security_status === 'Requires Re-encryption' && (
-                          <span className="text-xs text-destructive">
-                            Please re-enter your API key for enhanced security
-                          </span>
-                        )}
-                      </div>
+                   <div className="flex items-center space-x-3">
+                     <div>
+                       <h4 className="font-medium">{key.exchange_name || getExchangeName(key.exchange)}</h4>
+                       <p className="text-sm text-muted-foreground">
+                         {key.security_recommendation ? key.security_recommendation : 
+                          `Added ${new Date(key.created_at).toLocaleDateString()}`}
+                       </p>
+                     </div>
+                     <Badge
+                       variant={
+                         key.security_score >= 90 ? 'default' : 
+                         key.security_score >= 70 ? 'secondary' : 
+                         key.security_score > 0 ? 'destructive' : 'outline'
+                       }
+                     >
+                       {key.security_display || (key.is_active ? 'Active' : 'Inactive')}
+                     </Badge>
+                   </div>
+                   
+                   <div className="mt-2 space-y-1">
+                     <div className="flex items-center space-x-2">
+                       <span className="text-xs text-muted-foreground">Security:</span>
+                       <code className="text-xs bg-muted px-1 rounded">
+                         {key.encryption_status || 'Standard Encryption'}
+                       </code>
+                       {key.security_score && (
+                         <Badge variant="outline" className="text-xs">
+                           Score: {key.security_score}/100
+                         </Badge>
+                       )}
+                     </div>
                       
                       {/* Security Status Indicators */}
                       <div className="flex items-center space-x-4 text-xs">
@@ -449,37 +447,38 @@ export const APIKeyManager = () => {
                     </div>
                   </div>
 
-                  <div className="flex items-center space-x-2">
-                    {key.security_status === 'Requires Re-encryption' ? (
-                      <Button
-                        variant="default"
-                        size="sm"
-                        onClick={() => {
-                          // Pre-fill the form with the exchange to make re-entry easier
-                          setNewKey(prev => ({ ...prev, exchange: key.exchange }));
-                          setShowAddDialog(true);
-                        }}
-                      >
-                        Update Key
-                      </Button>
-                    ) : (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => toggleAPIKey(key.id, key.is_active)}
-                        disabled={key.security_status !== 'Securely Encrypted'}
-                      >
-                        {key.is_active ? 'Disable' : 'Enable'}
-                      </Button>
-                    )}
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      onClick={() => deleteAPIKey(key.id, key.exchange)}
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
-                  </div>
+                   <div className="flex items-center space-x-2">
+                     {key.security_score < 80 && key.security_score > 0 ? (
+                       <Button
+                         variant="default"
+                         size="sm"
+                         onClick={() => {
+                           // Pre-fill the form with the exchange to make re-entry easier
+                           setNewKey(prev => ({ ...prev, exchange: key.exchange }));
+                           setShowAddDialog(true);
+                         }}
+                       >
+                         <Shield className="h-3 w-3 mr-1" />
+                         Upgrade Security
+                       </Button>
+                     ) : (
+                       <Button
+                         variant="outline"
+                         size="sm"
+                         onClick={() => toggleAPIKey(key.id, key.is_active)}
+                         disabled={key.security_score === 0}
+                       >
+                         {key.is_active ? 'Disable' : 'Enable'}
+                       </Button>
+                     )}
+                     <Button
+                       variant="destructive"
+                       size="sm"
+                       onClick={() => deleteAPIKey(key.id, key.exchange)}
+                     >
+                       <Trash2 className="h-3 w-3" />
+                     </Button>
+                   </div>
                 </div>
               ))}
             </div>

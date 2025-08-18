@@ -175,7 +175,8 @@ class SecureCredentialManager {
           api_secret: encryptedApiSecret,
           passphrase: encryptedPassphrase,
           is_active: true,
-          encryption_key_id: 'edge_v1',
+          encryption_key_id: 'edge_v2',
+          encryption_version: 'v2',
           updated_at: new Date().toISOString()
         }, {
           onConflict: 'user_id,exchange'
@@ -245,27 +246,44 @@ class SecureCredentialManager {
     }
   }
 
-  // Get API key overview (no sensitive data)
+  // Get API key overview with enhanced security status (no sensitive data)
   async getCredentialOverview(userId: string): Promise<{ success: boolean; keys?: any[]; error?: string }> {
     try {
+      // Use the new secure security status view
       const { data, error } = await this.supabase
-        .from('api_keys')
-        .select('id, exchange, is_active, created_at, updated_at, last_accessed, access_count, failed_attempts, locked_until')
+        .from('api_keys_security_status')
+        .select('*')
         .eq('user_id', userId)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
 
-      // Mask any sensitive data and add exchange names
-      const maskedKeys = data?.map(key => ({
+      // Add exchange names and enhanced security information
+      const enhancedKeys = data?.map(key => ({
         ...key,
-        exchange_name: this.getExchangeName(key.exchange)
+        exchange_name: this.getExchangeName(key.exchange),
+        security_recommendation: this.getSecurityRecommendation(key)
       })) || [];
 
-      return { success: true, keys: maskedKeys };
+      return { success: true, keys: enhancedKeys };
     } catch (error) {
       console.error('Error getting credential overview:', error);
       return { success: false, error: error.message };
+    }
+  }
+
+  // Get security recommendations based on key status
+  private getSecurityRecommendation(key: any): string {
+    if (key.security_score >= 90) {
+      return 'Optimal Security';
+    } else if (key.security_score >= 80) {
+      return 'Good Security';
+    } else if (key.security_score >= 70) {
+      return 'Consider Upgrading Encryption';
+    } else if (key.security_score > 0) {
+      return 'Security Update Required';
+    } else {
+      return 'Inactive - No Security Risk';
     }
   }
 

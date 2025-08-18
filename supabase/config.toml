@@ -1,5 +1,8 @@
 project_id = "asxcbnkpflgecqreegdd"
 
+[functions.migrate-legacy-keys]
+verify_jwt = false
+
 [functions.secure-notification-settings]
 verify_jwt = false
 
