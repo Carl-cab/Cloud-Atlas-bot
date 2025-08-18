@@ -11,6 +11,7 @@ const ENCRYPTION_KEY = Deno.env.get('ENCRYPTION_KEY')!;
 
 class SecureCredentialManager {
   private supabase;
+  private readonly rateLimitMap = new Map<string, { count: number; resetTime: number }>();
   
   constructor() {
     this.supabase = createClient(
@@ -19,21 +20,59 @@ class SecureCredentialManager {
     );
   }
 
-  // Encrypt credentials using Web Crypto API
-  private async encrypt(data: string): Promise<string> {
-    if (!data || data === '') return '';
+  // Enhanced rate limiting per user
+  private checkRateLimit(userId: string, maxRequests = 10, windowMs = 3600000): boolean {
+    const key = `credentials_${userId}`;
+    const now = Date.now();
+    const limit = this.rateLimitMap.get(key);
     
-    const key = await crypto.subtle.importKey(
+    if (!limit || now > limit.resetTime) {
+      this.rateLimitMap.set(key, { count: 1, resetTime: now + windowMs });
+      return true;
+    }
+    
+    if (limit.count >= maxRequests) {
+      return false;
+    }
+    
+    limit.count++;
+    return true;
+  }
+
+  // Derive cryptographic key using HKDF
+  private async deriveKey(salt: string): Promise<CryptoKey> {
+    const baseKey = await crypto.subtle.importKey(
       'raw',
-      new TextEncoder().encode(ENCRYPTION_KEY.substring(0, 32).padEnd(32, '0')),
-      { name: 'AES-GCM' },
+      new TextEncoder().encode(ENCRYPTION_KEY),
+      { name: 'HKDF' },
       false,
-      ['encrypt']
+      ['deriveKey']
     );
     
+    return await crypto.subtle.deriveKey(
+      {
+        name: 'HKDF',
+        hash: 'SHA-256',
+        salt: new TextEncoder().encode(salt),
+        info: new TextEncoder().encode('api-credential-encryption')
+      },
+      baseKey,
+      { name: 'AES-GCM', length: 256 },
+      false,
+      ['encrypt', 'decrypt']
+    );
+  }
+
+  // Enhanced encryption with AAD (Additional Authenticated Data)
+  private async encrypt(data: string, userId: string, exchange: string): Promise<string> {
+    if (!data || data === '') return '';
+    
+    const key = await this.deriveKey(`${userId}:${exchange}`);
     const iv = crypto.getRandomValues(new Uint8Array(12));
+    const aad = new TextEncoder().encode(`${userId}:${exchange}:v2`);
+    
     const encrypted = await crypto.subtle.encrypt(
-      { name: 'AES-GCM', iv },
+      { name: 'AES-GCM', iv, additionalData: aad },
       key,
       new TextEncoder().encode(data)
     );
@@ -46,25 +85,20 @@ class SecureCredentialManager {
     return btoa(String.fromCharCode(...combined));
   }
 
-  // Decrypt credentials using Web Crypto API
-  private async decrypt(encryptedData: string): Promise<string> {
+  // Enhanced decryption with AAD verification
+  private async decrypt(encryptedData: string, userId: string, exchange: string): Promise<string> {
     if (!encryptedData || encryptedData === '') return '';
     
     try {
-      const key = await crypto.subtle.importKey(
-        'raw',
-        new TextEncoder().encode(ENCRYPTION_KEY.substring(0, 32).padEnd(32, '0')),
-        { name: 'AES-GCM' },
-        false,
-        ['decrypt']
-      );
+      const key = await this.deriveKey(`${userId}:${exchange}`);
+      const aad = new TextEncoder().encode(`${userId}:${exchange}:v2`);
       
       const combined = new Uint8Array(atob(encryptedData).split('').map(c => c.charCodeAt(0)));
       const iv = combined.slice(0, 12);
       const encrypted = combined.slice(12);
       
       const decrypted = await crypto.subtle.decrypt(
-        { name: 'AES-GCM', iv },
+        { name: 'AES-GCM', iv, additionalData: aad },
         key,
         encrypted
       );
@@ -72,13 +106,51 @@ class SecureCredentialManager {
       return new TextDecoder().decode(decrypted);
     } catch (error) {
       console.error('Decryption failed:', error);
+      // Log security event for failed decryption attempts
+      await this.supabase
+        .from('security_audit_log')
+        .insert({
+          user_id: userId,
+          action: 'DECRYPTION_FAILURE',
+          resource: 'api_keys',
+          success: false,
+          metadata: { exchange, error: 'Decryption failed' }
+        });
       return '';
     }
+  }
+
+  // Validate API key format
+  private validateAPIKey(apiKey: string, exchange: string): boolean {
+    const patterns: Record<string, RegExp> = {
+      'kraken': /^[A-Za-z0-9+/]{56}$/,
+      'binance': /^[A-Za-z0-9]{64}$/,
+      'coinbase': /^[a-f0-9]{32}$/,
+      'bybit': /^[A-Za-z0-9]{20}$/,
+      'okx': /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/
+    };
+    
+    const pattern = patterns[exchange];
+    return !pattern || pattern.test(apiKey);
   }
 
   // Store encrypted API credentials
   async storeCredentials(userId: string, exchange: string, apiKey: string, apiSecret: string, passphrase?: string): Promise<{ success: boolean; id?: string; error?: string }> {
     try {
+      // Rate limiting check
+      if (!this.checkRateLimit(userId, 5, 3600000)) { // 5 operations per hour
+        return { success: false, error: 'Rate limit exceeded. Please try again later.' };
+      }
+
+      // Input validation
+      if (!apiKey || !apiSecret || apiKey.length < 10 || apiSecret.length < 10) {
+        return { success: false, error: 'Invalid API key or secret format' };
+      }
+
+      if (!this.validateAPIKey(apiKey, exchange)) {
+        return { success: false, error: 'API key format invalid for selected exchange' };
+      }
+
       // Log the credential storage attempt
       await this.supabase
         .from('security_audit_log')
@@ -90,9 +162,9 @@ class SecureCredentialManager {
           metadata: { exchange }
         });
 
-      const encryptedApiKey = await this.encrypt(apiKey);
-      const encryptedApiSecret = await this.encrypt(apiSecret);
-      const encryptedPassphrase = passphrase ? await this.encrypt(passphrase) : null;
+      const encryptedApiKey = await this.encrypt(apiKey, userId, exchange);
+      const encryptedApiSecret = await this.encrypt(apiSecret, userId, exchange);
+      const encryptedPassphrase = passphrase ? await this.encrypt(passphrase, userId, exchange) : null;
 
       const { data, error } = await this.supabase
         .from('api_keys')
@@ -150,9 +222,9 @@ class SecureCredentialManager {
         return { success: false, error: 'API key is temporarily locked' };
       }
 
-      const decryptedApiKey = await this.decrypt(data.api_key);
-      const decryptedApiSecret = await this.decrypt(data.api_secret);
-      const decryptedPassphrase = data.passphrase ? await this.decrypt(data.passphrase) : null;
+      const decryptedApiKey = await this.decrypt(data.api_key, userId, exchange);
+      const decryptedApiSecret = await this.decrypt(data.api_secret, userId, exchange);
+      const decryptedPassphrase = data.passphrase ? await this.decrypt(data.passphrase, userId, exchange) : null;
 
       if (!decryptedApiKey || !decryptedApiSecret) {
         return { success: false, error: 'Failed to decrypt credentials' };
@@ -206,6 +278,70 @@ class SecureCredentialManager {
       'okx': 'OKX'
     };
     return names[exchange] || exchange.toUpperCase();
+  }
+
+  // Toggle API key active status
+  async toggleAPIKey(userId: string, keyId: string, active: boolean): Promise<{ success: boolean; error?: string }> {
+    try {
+      if (!this.checkRateLimit(userId)) {
+        return { success: false, error: 'Rate limit exceeded' };
+      }
+
+      const { error } = await this.supabase
+        .from('api_keys')
+        .update({ is_active: active, updated_at: new Date().toISOString() })
+        .eq('id', keyId)
+        .eq('user_id', userId); // Ensure user can only modify their own keys
+
+      if (error) throw error;
+
+      await this.supabase
+        .from('security_audit_log')
+        .insert({
+          user_id: userId,
+          action: active ? 'API_KEY_ENABLED' : 'API_KEY_DISABLED',
+          resource: 'api_keys',
+          success: true,
+          metadata: { key_id: keyId }
+        });
+
+      return { success: true };
+    } catch (error) {
+      console.error('Error toggling API key:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Delete API key
+  async deleteAPIKey(userId: string, keyId: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      if (!this.checkRateLimit(userId)) {
+        return { success: false, error: 'Rate limit exceeded' };
+      }
+
+      const { error } = await this.supabase
+        .from('api_keys')
+        .delete()
+        .eq('id', keyId)
+        .eq('user_id', userId); // Ensure user can only delete their own keys
+
+      if (error) throw error;
+
+      await this.supabase
+        .from('security_audit_log')
+        .insert({
+          user_id: userId,
+          action: 'API_KEY_DELETED',
+          resource: 'api_keys',
+          success: true,
+          metadata: { key_id: keyId }
+        });
+
+      return { success: true };
+    } catch (error) {
+      console.error('Error deleting API key:', error);
+      return { success: false, error: error.message };
+    }
   }
 }
 
@@ -261,6 +397,22 @@ serve(async (req) => {
 
       case 'overview': {
         const result = await credentialManager.getCredentialOverview(user.id);
+        
+        return new Response(JSON.stringify(result), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
+      case 'toggle': {
+        const result = await credentialManager.toggleAPIKey(user.id, params.key_id, params.active);
+        
+        return new Response(JSON.stringify(result), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
+      case 'delete': {
+        const result = await credentialManager.deleteAPIKey(user.id, params.key_id);
         
         return new Response(JSON.stringify(result), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }

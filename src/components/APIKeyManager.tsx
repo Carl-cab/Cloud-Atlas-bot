@@ -152,12 +152,27 @@ export const APIKeyManager = () => {
 
   const toggleAPIKey = async (id: string, currentStatus: boolean) => {
     try {
-      const { error } = await supabase
-        .from('api_keys')
-        .update({ is_active: !currentStatus })
-        .eq('id', id);
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        toast({ title: "Authentication required", variant: "destructive" });
+        return;
+      }
 
-      if (error) throw error;
+      const response = await supabase.functions.invoke('secure-credentials', {
+        body: { 
+          action: 'toggle', 
+          key_id: id, 
+          active: !currentStatus 
+        },
+        headers: {
+          Authorization: `Bearer ${session.access_token}`
+        }
+      });
+
+      if (response.error || !response.data?.success) {
+        throw new Error(response.data?.error || 'Failed to update API key');
+      }
+
       await loadAPIKeys();
       
       toast({
@@ -176,22 +191,36 @@ export const APIKeyManager = () => {
   };
 
   const deleteAPIKey = async (id: string, exchange: string) => {
-    if (!confirm(`Are you sure you want to delete the ${exchange} API key?`)) {
+    if (!confirm(`Are you sure you want to delete the ${exchange} API key? This action cannot be undone.`)) {
       return;
     }
 
     try {
-      const { error } = await supabase
-        .from('api_keys')
-        .delete()
-        .eq('id', id);
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        toast({ title: "Authentication required", variant: "destructive" });
+        return;
+      }
 
-      if (error) throw error;
+      const response = await supabase.functions.invoke('secure-credentials', {
+        body: { 
+          action: 'delete', 
+          key_id: id 
+        },
+        headers: {
+          Authorization: `Bearer ${session.access_token}`
+        }
+      });
+
+      if (response.error || !response.data?.success) {
+        throw new Error(response.data?.error || 'Failed to delete API key');
+      }
+
       await loadAPIKeys();
       
       toast({
         title: "API Key Deleted",
-        description: `${exchange} API key has been removed`,
+        description: `${exchange} API key has been securely removed`,
       });
 
     } catch (error) {
@@ -226,12 +255,13 @@ export const APIKeyManager = () => {
 
   return (
     <div className="space-y-6">
-      {/* Security Notice */}
+      {/* Enhanced Security Notice */}
       <Alert>
         <Shield className="h-4 w-4" />
         <AlertDescription>
-          <strong>Security:</strong> All API keys are encrypted and stored securely. 
-          Never share your API keys or secrets with anyone.
+          <strong>Enhanced Security:</strong> All API keys are encrypted using AES-256-GCM with HKDF key derivation 
+          and authenticated encryption. Rate limiting protects against automated attacks. 
+          Never share your API keys or grant withdrawal permissions.
         </AlertDescription>
       </Alert>
 
