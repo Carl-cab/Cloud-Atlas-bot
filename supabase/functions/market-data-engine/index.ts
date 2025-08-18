@@ -34,13 +34,34 @@ serve(async (req) => {
   }
 
   try {
+    const { action, symbol, exchange = 'kraken' } = await req.json();
+    console.log(`Market data engine: ${action} for ${symbol} on ${exchange}`);
+
+    // SECURITY: Some actions require authentication
+    let user = null;
+    if (['get_dashboard_metrics'].includes(action)) {
+      const authHeader = req.headers.get('authorization');
+      if (!authHeader) {
+        throw new Error('Authentication required for this action');
+      }
+
+      const supabaseAuth = createClient(
+        Deno.env.get('SUPABASE_URL') ?? '',
+        Deno.env.get('SUPABASE_ANON_KEY') ?? ''
+      );
+      const token = authHeader.replace('Bearer ', '');
+      const { data: { user: authUser }, error: authError } = await supabaseAuth.auth.getUser(token);
+      
+      if (authError || !authUser) {
+        throw new Error('Invalid or expired token');
+      }
+      user = authUser;
+    }
+
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_ANON_KEY') ?? '',
     );
-
-    const { action, symbol, exchange = 'kraken' } = await req.json();
-    console.log(`Market data engine: ${action} for ${symbol} on ${exchange}`);
 
     switch (action) {
       case 'fetch_real_time':

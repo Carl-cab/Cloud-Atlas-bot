@@ -37,7 +37,7 @@ export const PlatformSelector = ({
       id: 'binance',
       name: 'Binance',
       description: 'World\'s largest crypto exchange',
-      status: 'connected',
+      status: 'disconnected', // SECURITY FIX: Default to disconnected
       features: ['Spot Trading', 'Futures', 'Options', 'Staking'],
       logo: '🟡'
     },
@@ -53,7 +53,7 @@ export const PlatformSelector = ({
       id: 'kraken',
       name: 'Kraken',
       description: 'Secure and reliable exchange',
-      status: 'connected',
+      status: 'disconnected', // SECURITY FIX: Default to disconnected
       features: ['Spot Trading', 'Margin Trading', 'Futures'],
       logo: '🟣'
     },
@@ -61,7 +61,7 @@ export const PlatformSelector = ({
       id: 'bybit',
       name: 'Bybit',
       description: 'Derivatives trading platform',
-      status: 'pending',
+      status: 'disconnected', // SECURITY FIX: Default to disconnected
       features: ['Derivatives', 'Spot Trading', 'Copy Trading'],
       logo: '🟠'
     }

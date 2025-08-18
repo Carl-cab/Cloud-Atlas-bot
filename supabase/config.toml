@@ -8,3 +8,12 @@ verify_jwt = true
 
 [functions.security-audit]
 verify_jwt = true
+
+[functions.live-trading-engine]
+verify_jwt = true
+
+[functions.enhanced-ml-engine]
+verify_jwt = true
+
+[functions.market-data-engine]
+verify_jwt = false

@@ -283,12 +283,38 @@ serve(async (req) => {
   }
 
   try {
+    // Authenticate the request first - CRITICAL SECURITY FIX
+    const authHeader = req.headers.get('authorization');
+    if (!authHeader) {
+      throw new Error('No authorization header');
+    }
+
+    const supabaseAuth = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_ANON_KEY') ?? ''
+    );
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user }, error: authError } = await supabaseAuth.auth.getUser(token);
+    
+    if (authError || !user) {
+      throw new Error('Invalid or expired token');
+    }
+
     const { action, ...params } = await req.json();
+    
+    // SECURITY: Always use authenticated user ID, ignore any user_id in body
+    const authenticatedUserId = user.id;
+    
     const securityService = new SecurityAuditService();
 
     switch (action) {
       case 'log_event': {
-        const result = await securityService.logSecurityEvent(params as SecurityEvent, req);
+        // Use authenticated user ID for all security events
+        const securityEvent: SecurityEvent = {
+          ...params,
+          user_id: authenticatedUserId
+        };
+        const result = await securityService.logSecurityEvent(securityEvent, req);
         
         return new Response(JSON.stringify({
           success: true,
@@ -299,7 +325,12 @@ serve(async (req) => {
       }
 
       case 'check_rate_limit': {
-        const allowed = await securityService.checkRateLimit(params as RateLimitCheck);
+        // Use authenticated user ID for rate limiting
+        const rateLimitCheck: RateLimitCheck = {
+          ...params,
+          user_id: authenticatedUserId
+        };
+        const allowed = await securityService.checkRateLimit(rateLimitCheck);
         
         return new Response(JSON.stringify({
           success: true,
@@ -310,7 +341,8 @@ serve(async (req) => {
       }
 
       case 'get_audit_logs': {
-        const logs = await securityService.getAuditLogs(params.user_id, params.limit);
+        // Only allow access to authenticated user's logs
+        const logs = await securityService.getAuditLogs(authenticatedUserId, params.limit);
         
         return new Response(JSON.stringify({
           success: true,
@@ -321,7 +353,8 @@ serve(async (req) => {
       }
 
       case 'get_metrics': {
-        const metrics = await securityService.getAPIMetrics(params.user_id);
+        // Only allow access to authenticated user's metrics
+        const metrics = await securityService.getAPIMetrics(authenticatedUserId);
         
         return new Response(JSON.stringify({
           success: true,

@@ -555,6 +555,23 @@ serve(async (req) => {
   }
 
   try {
+    // SECURITY FIX: Authenticate requests for enhanced ML engine
+    const authHeader = req.headers.get('authorization');
+    if (!authHeader) {
+      throw new Error('No authorization header');
+    }
+
+    const supabaseAuth = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_ANON_KEY') ?? ''
+    );
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user }, error: authError } = await supabaseAuth.auth.getUser(token);
+    
+    if (authError || !user) {
+      throw new Error('Invalid or expired token');
+    }
+
     const { action, symbol, marketData, capital, filter_settings, lookback_days } = await req.json();
     const mlEngine = new EnhancedMLEngine();
 

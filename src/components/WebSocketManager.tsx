@@ -76,8 +76,8 @@ export const WebSocketManager = () => {
   };
 
   useEffect(() => {
-    // Auto-connect to Kraken BTCUSD on load
-    connectToFeed('kraken', 'BTCUSD', 'ticker');
+    // SECURITY FIX: Removed auto-connect behavior - require explicit user action
+    // Users must manually connect to feeds for security and consent reasons
     
     return () => {
       // Cleanup all WebSocket connections
