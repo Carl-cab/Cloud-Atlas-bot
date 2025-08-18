@@ -130,24 +130,33 @@ export const BasicNotifications = () => {
 
   const loadSettings = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { data, error } = await supabase
-        .from('notification_settings')
-        .select('*')
-        .eq('user_id', user.id)
-        .maybeSingle();
-
-      if (data) {
-        setSettings({
-          price_alerts: data.trade_alerts || true,
-          trade_executions: data.trade_alerts || true,
-          system_notifications: true,
-          market_regime_changes: true,
-          email_notifications: data.email_enabled || false
-        });
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        console.log("User not authenticated");
+        return;
       }
+
+      // Use secure notification settings endpoint
+      const response = await supabase.functions.invoke('secure-notification-settings', {
+        body: { action: 'get' },
+        headers: {
+          Authorization: `Bearer ${session.access_token}`
+        }
+      });
+
+      if (response.error || !response.data?.success) {
+        console.log('No existing settings found, using defaults');
+        return;
+      }
+
+      const data = response.data.settings;
+      setSettings({
+        price_alerts: data.trade_alerts || true,
+        trade_executions: data.trade_alerts || true,
+        system_notifications: data.daily_reports || true,
+        market_regime_changes: true,
+        email_notifications: data.email_enabled || false
+      });
     } catch (error) {
       console.error('Error loading settings:', error);
     }
@@ -258,30 +267,41 @@ export const BasicNotifications = () => {
     setSettings(newSettings);
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        toast({ title: "Authentication required", variant: "destructive" });
+        return;
+      }
 
-      // Map to existing notification_settings structure
-      const mappedSettings = {
+      // Map to secure notification settings format
+      const secureSettings = {
         telegram_enabled: false,
         email_enabled: newSettings.email_notifications,
         daily_reports: newSettings.system_notifications,
         trade_alerts: newSettings.trade_executions || newSettings.price_alerts,
         risk_alerts: newSettings.system_notifications,
-        performance_summary: newSettings.system_notifications
+        performance_summary: newSettings.system_notifications,
+        email_address: '',
+        telegram_chat_id: ''
       };
 
-      await supabase.functions.invoke('notification-engine', {
-        body: {
-          action: 'update_settings',
-          userId: user.id,
-          settings: mappedSettings
+      const response = await supabase.functions.invoke('secure-notification-settings', {
+        body: { 
+          action: 'store',
+          settings: secureSettings
+        },
+        headers: {
+          Authorization: `Bearer ${session.access_token}`
         }
       });
 
+      if (response.error || !response.data?.success) {
+        throw new Error(response.data?.error || 'Failed to update notification settings');
+      }
+
       toast({
         title: 'Settings Updated',
-        description: 'Notification preferences have been saved'
+        description: 'Notification preferences have been saved securely'
       });
     } catch (error) {
       console.error('Error updating settings:', error);

@@ -143,23 +143,34 @@ export const ReportingNotifications = () => {
   const saveNotificationSettings = async () => {
     setIsLoading(true);
     try {
-      const user = await supabase.auth.getUser();
-      if (!user.data.user) throw new Error('User not authenticated');
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        throw new Error('User not authenticated');
+      }
 
-      // Use RPC function to handle upsert
-      const { error } = await supabase.rpc('upsert_notification_settings', {
-        p_user_id: user.data.user.id,
-        p_telegram_enabled: settings.telegram_enabled,
-        p_email_enabled: settings.email_enabled,
-        p_daily_reports: settings.daily_reports,
-        p_trade_alerts: settings.trade_alerts,
-        p_risk_alerts: settings.risk_alerts,
-        p_performance_summary: settings.performance_summary,
-        p_email_address: settings.email_address,
-        p_telegram_chat_id: settings.telegram_chat_id
+      // Use secure notification settings endpoint
+      const response = await supabase.functions.invoke('secure-notification-settings', {
+        body: { 
+          action: 'store',
+          settings: {
+            telegram_enabled: settings.telegram_enabled,
+            email_enabled: settings.email_enabled,
+            daily_reports: settings.daily_reports,
+            trade_alerts: settings.trade_alerts,
+            risk_alerts: settings.risk_alerts,
+            performance_summary: settings.performance_summary,
+            email_address: settings.email_address,
+            telegram_chat_id: settings.telegram_chat_id
+          }
+        },
+        headers: {
+          Authorization: `Bearer ${session.access_token}`
+        }
       });
 
-      if (error) throw error;
+      if (response.error || !response.data?.success) {
+        throw new Error(response.data?.error || 'Failed to save notification settings');
+      }
 
       toast({
         title: "Settings Saved",

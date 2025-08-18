@@ -1,5 +1,8 @@
 project_id = "asxcbnkpflgecqreegdd"
 
+[functions.secure-notification-settings]
+verify_jwt = false
+
 [functions.trading-bot]
 verify_jwt = true
 
@@ -16,4 +19,7 @@ verify_jwt = true
 verify_jwt = true
 
 [functions.market-data-engine]
+verify_jwt = false
+
+[functions.notification-engine]
 verify_jwt = false

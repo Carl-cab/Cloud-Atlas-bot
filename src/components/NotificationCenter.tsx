@@ -139,25 +139,36 @@ export const NotificationCenter = () => {
         return;
       }
 
-      // Load notification settings
-      const { data: settingsData } = await supabase
-        .from('notification_settings')
-        .select('*')
-        .eq('user_id', user.id)
-        .maybeSingle();
-
-      if (settingsData) {
-        setSettings({
-          telegram_enabled: settingsData.telegram_enabled || false,
-          email_enabled: settingsData.email_enabled || false,
-          daily_reports: settingsData.daily_reports || true,
-          trade_alerts: settingsData.trade_alerts || true,
-          risk_alerts: settingsData.risk_alerts || true,
-          performance_summary: settingsData.performance_summary || true,
-          email_address: settingsData.email_address || '',
-          telegram_chat_id: settingsData.telegram_chat_id || ''
-        });
+      // Load notification settings using secure endpoint
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        console.log("User not authenticated");
+        return;
       }
+
+      const response = await supabase.functions.invoke('secure-notification-settings', {
+        body: { action: 'get' },
+        headers: {
+          Authorization: `Bearer ${session.access_token}`
+        }
+      });
+
+      if (response.error || !response.data?.success) {
+        console.log('No existing settings found, using defaults');
+        return;
+      }
+
+      const settingsData = response.data.settings;
+      setSettings({
+        telegram_enabled: settingsData.telegram_enabled || false,
+        email_enabled: settingsData.email_enabled || false,
+        daily_reports: settingsData.daily_reports || true,
+        trade_alerts: settingsData.trade_alerts || true,
+        risk_alerts: settingsData.risk_alerts || true,
+        performance_summary: settingsData.performance_summary || true,
+        email_address: settingsData.email_address || '',
+        telegram_chat_id: settingsData.telegram_chat_id || ''
+      });
 
       // Load recent notifications
       const { data: notificationsData } = await supabase
@@ -181,19 +192,28 @@ export const NotificationCenter = () => {
   const saveSettings = async () => {
     setIsSaving(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
         console.log("User not authenticated");
         return;
       }
 
-      await supabase
-        .from('notification_settings')
-        .upsert({
-          user_id: user.id,
-          ...settings,
-          updated_at: new Date().toISOString()
-        });
+      const response = await supabase.functions.invoke('secure-notification-settings', {
+        body: { 
+          action: 'store',
+          settings: {
+            ...settings,
+            updated_at: new Date().toISOString()
+          }
+        },
+        headers: {
+          Authorization: `Bearer ${session.access_token}`
+        }
+      });
+
+      if (response.error || !response.data?.success) {
+        throw new Error(response.data?.error || 'Failed to save notification settings');
+      }
 
       toast({
         title: "Settings Saved",

@@ -27,8 +27,40 @@ class NotificationEngine {
   constructor() {
     this.supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? ''
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
+  }
+
+  // Get decrypted notification settings for a user
+  async getSecureNotificationSettings(userId: string): Promise<{ 
+    email?: string; 
+    telegram_chat_id?: string; 
+    settings?: any;
+    success: boolean;
+  }> {
+    try {
+      const { data, error } = await this.supabase.functions.invoke('secure-notification-settings', {
+        body: { action: 'get_for_notifications' },
+        headers: {
+          Authorization: `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`
+        }
+      });
+
+      if (error || !data?.success) {
+        console.error('Failed to get secure notification settings:', error || data?.error);
+        return { success: false };
+      }
+
+      return {
+        success: true,
+        email: data.email,
+        telegram_chat_id: data.telegram_chat_id,
+        settings: data.settings
+      };
+    } catch (error) {
+      console.error('Error getting secure notification settings:', error);
+      return { success: false };
+    }
   }
 
   // Send Telegram message
@@ -309,25 +341,31 @@ serve(async (req) => {
         const stats = await engine.getTradingStats(request.user_id);
         const reportType = request.report_type || 'daily';
         
+        // Get secure notification settings
+        const userSettings = await engine.getSecureNotificationSettings(request.user_id);
+        if (!userSettings.success) {
+          throw new Error('Failed to retrieve user notification settings');
+        }
+        
         const results = [];
 
-        if (request.send_telegram) {
+        if (request.send_telegram && userSettings.settings?.telegram_enabled && userSettings.telegram_chat_id) {
           const telegramMessage = engine.generateTelegramReport(stats, reportType);
-          await engine.sendTelegramMessage(telegramMessage);
+          await engine.sendTelegramMessage(telegramMessage, userSettings.telegram_chat_id);
           results.push('telegram');
           
           await engine.logNotification(request.user_id, `${reportType}_report_telegram`, 'sent', { stats });
         }
 
-        if (request.send_email && request.email) {
+        if (request.send_email && userSettings.settings?.email_enabled && userSettings.email) {
           const subject = `CloudAtlasBot ${reportType.charAt(0).toUpperCase() + reportType.slice(1)} Report`;
           const html = engine.generateReportHTML(stats, reportType);
           
-          await engine.sendEmail(request.email, subject, html);
+          await engine.sendEmail(userSettings.email, subject, html);
           results.push('email');
           
           await engine.logNotification(request.user_id, `${reportType}_report_email`, 'sent', { 
-            email: request.email, 
+            email_masked: userSettings.email.substring(0, 3) + '***@***', 
             stats 
           });
         }
@@ -345,17 +383,23 @@ serve(async (req) => {
         // This would be called by other systems to send real-time alerts
         const alertMessage = request.message || 'Trading alert from CloudAtlasBot';
         
-        if (request.send_telegram) {
-          await engine.sendTelegramMessage(`🚨 <b>Alert:</b> ${alertMessage}`);
+        // Get secure notification settings
+        const userSettings = await engine.getSecureNotificationSettings(request.user_id);
+        if (!userSettings.success) {
+          throw new Error('Failed to retrieve user notification settings');
+        }
+        
+        if (request.send_telegram && userSettings.settings?.telegram_enabled && userSettings.telegram_chat_id) {
+          await engine.sendTelegramMessage(`🚨 <b>Alert:</b> ${alertMessage}`, userSettings.telegram_chat_id);
         }
 
-        if (request.send_email && request.email) {
+        if (request.send_email && userSettings.settings?.email_enabled && userSettings.email) {
           const html = `
             <h2>🚨 CloudAtlasBot Alert</h2>
             <p><strong>${alertMessage}</strong></p>
             <p><em>Time: ${new Date().toLocaleString()}</em></p>
           `;
-          await engine.sendEmail(request.email, 'CloudAtlasBot Alert', html);
+          await engine.sendEmail(userSettings.email, 'CloudAtlasBot Alert', html);
         }
 
         await engine.logNotification(request.user_id, 'alert', 'sent', { message: alertMessage });
