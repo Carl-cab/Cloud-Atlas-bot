@@ -142,14 +142,25 @@ export const LiveTrading = () => {
       if (error) throw error;
       if (data?.success) {
         setAccountBalance(data.balance);
+      } else {
+        throw new Error(data?.error || 'Failed to fetch account balance');
       }
     } catch (error) {
       console.error('Error fetching account data:', error);
+      const errorMessage = error.message?.includes('credentials') 
+        ? "Kraken API credentials not configured. Please add your API keys in Dashboard → Security."
+        : `Failed to fetch account balance: ${error.message}`;
+      
       toast({
         title: "Connection Error",
-        description: "Failed to fetch account balance. Check Kraken API connection.",
+        description: errorMessage,
         variant: "destructive"
       });
+      
+      // If credentials issue, disable live mode
+      if (error.message?.includes('credentials')) {
+        setIsLiveMode(false);
+      }
     }
   };
 
@@ -370,6 +381,54 @@ export const LiveTrading = () => {
     return parseFloat(amount).toFixed(8);
   };
 
+  const handleToggleLiveMode = async () => {
+    if (isLiveMode) {
+      setIsLiveMode(false);
+      return;
+    }
+
+    // Test connection before enabling live mode
+    setIsLoading(true);
+    try {
+      const user = await supabase.auth.getUser();
+      if (!user.data.user) {
+        throw new Error('User not authenticated');
+      }
+
+      const { data, error } = await supabase.functions.invoke('live-trading-engine', {
+        body: { action: 'get_balance', user_id: user.data.user.id }
+      });
+
+      if (error) throw error;
+      
+      if (!data?.success) {
+        throw new Error(data?.error || 'Failed to connect to Kraken API');
+      }
+
+      // Connection successful, enable live mode
+      setIsLiveMode(true);
+      setAccountBalance(data.balance);
+      
+      toast({
+        title: "Live Mode Enabled",
+        description: "Successfully connected to Kraken API",
+      });
+    } catch (error) {
+      console.error('Connection test failed:', error);
+      const errorMessage = error.message?.includes('credentials') 
+        ? "Please add your Kraken API keys in Dashboard → Security before enabling Live Mode."
+        : `Connection failed: ${error.message}`;
+      
+      toast({
+        title: "Connection Failed",
+        description: errorMessage,
+        variant: "destructive"
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const getPortfolioValue = () => {
     const usdBalance = parseFloat(accountBalance.ZUSD || accountBalance.USD || '0');
     const btcBalance = parseFloat(accountBalance.XXBT || '0');
@@ -422,10 +481,11 @@ export const LiveTrading = () => {
             </Badge>
             
             <Button
-              onClick={() => setIsLiveMode(!isLiveMode)}
+              onClick={handleToggleLiveMode}
               variant={isLiveMode ? 'destructive' : 'default'}
               size="sm"
               className="px-4"
+              disabled={isLoading}
             >
               {isLiveMode ? (
                 <>
@@ -435,7 +495,7 @@ export const LiveTrading = () => {
               ) : (
                 <>
                   <Play className="h-4 w-4 mr-1" />
-                  Enable Live Mode
+                  {isLoading ? 'Connecting...' : 'Enable Live Mode'}
                 </>
               )}
             </Button>

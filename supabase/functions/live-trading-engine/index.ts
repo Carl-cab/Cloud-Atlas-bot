@@ -35,15 +35,46 @@ class LiveTradingEngine {
   }
 
   // Generate Kraken API signature
-  private generateKrakenSignature(path: string, nonce: string, postData: string, secret: string): string {
-    const encoder = new TextEncoder();
-    const hash = crypto.subtle.digest('SHA-256', encoder.encode(nonce + postData));
-    const hmac = crypto.subtle.sign(
-      'HMAC-SHA-512',
-      encoder.encode(atob(secret)),
-      encoder.encode(path + hash)
-    );
-    return btoa(String.fromCharCode(...new Uint8Array(hmac)));
+  private async generateKrakenSignature(path: string, nonce: string, postData: string, secret: string): Promise<string> {
+    try {
+      const encoder = new TextEncoder();
+      const decoder = new TextDecoder();
+      
+      // Create the message to hash (nonce + postData)
+      const message = nonce + postData;
+      const messageHash = await crypto.subtle.digest('SHA-256', encoder.encode(message));
+      
+      // Decode the base64 secret
+      const secretBytes = new Uint8Array(
+        atob(secret)
+          .split('')
+          .map(char => char.charCodeAt(0))
+      );
+      
+      // Import the secret key for HMAC
+      const key = await crypto.subtle.importKey(
+        'raw',
+        secretBytes,
+        { name: 'HMAC', hash: 'SHA-512' },
+        false,
+        ['sign']
+      );
+      
+      // Create the final message (path + hash)
+      const pathBytes = encoder.encode(path);
+      const combinedMessage = new Uint8Array(pathBytes.length + messageHash.byteLength);
+      combinedMessage.set(pathBytes);
+      combinedMessage.set(new Uint8Array(messageHash), pathBytes.length);
+      
+      // Sign the message
+      const signature = await crypto.subtle.sign('HMAC', key, combinedMessage);
+      
+      // Convert to base64
+      return btoa(String.fromCharCode(...new Uint8Array(signature)));
+    } catch (error) {
+      console.error('Signature generation error:', error);
+      throw new Error(`Failed to generate Kraken signature: ${error.message}`);
+    }
   }
 
   // Make authenticated Kraken API request

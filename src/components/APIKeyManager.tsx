@@ -260,6 +260,49 @@ export const APIKeyManager = () => {
     return SUPPORTED_EXCHANGES.find(e => e.id === exchange)?.requiresPassphrase || false;
   };
 
+  const testConnection = async (keyId: string) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        toast({ title: "Authentication required", variant: "destructive" });
+        return;
+      }
+
+      toast({
+        title: "Testing Connection...",
+        description: "Verifying Kraken API credentials",
+      });
+
+      const { data, error } = await supabase.functions.invoke('live-trading-engine', {
+        body: { 
+          action: 'get_balance'
+        },
+        headers: {
+          Authorization: `Bearer ${session.access_token}`
+        }
+      });
+
+      if (error) throw error;
+      
+      if (data?.success) {
+        toast({
+          title: "Connection Successful",
+          description: "Kraken API credentials are working correctly",
+        });
+      } else {
+        throw new Error(data?.error || 'Connection test failed');
+      }
+
+    } catch (error) {
+      console.error('Connection test failed:', error);
+      toast({
+        title: "Connection Failed",
+        description: error.message || "Failed to connect to Kraken API. Please check your credentials.",
+        variant: "destructive"
+      });
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Enhanced Security Notice */}
@@ -448,6 +491,18 @@ export const APIKeyManager = () => {
                   </div>
 
                    <div className="flex items-center space-x-2">
+                     {key.exchange === 'kraken' && (
+                       <Button
+                         variant="outline"
+                         size="sm"
+                         onClick={() => testConnection(key.id)}
+                         disabled={!key.is_active}
+                       >
+                         <CheckCircle className="h-3 w-3 mr-1" />
+                         Test Connection
+                       </Button>
+                     )}
+                     
                      {key.security_score < 80 && key.security_score > 0 ? (
                        <Button
                          variant="default"
