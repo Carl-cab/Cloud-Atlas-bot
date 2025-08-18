@@ -26,3 +26,6 @@ verify_jwt = false
 
 [functions.notification-engine]
 verify_jwt = false
+
+[functions.auth-failure-test]
+verify_jwt = false

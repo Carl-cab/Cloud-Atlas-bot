@@ -20,8 +20,8 @@ class SecureCredentialManager {
     );
   }
 
-  // Enhanced rate limiting per user
-  private checkRateLimit(userId: string, maxRequests = 10, windowMs = 3600000): boolean {
+  // Enhanced rate limiting per user - supports >100 RPM
+  private checkRateLimit(userId: string, maxRequests = 200, windowMs = 60000): boolean {
     const key = `credentials_${userId}`;
     const now = Date.now();
     const limit = this.rateLimitMap.get(key);
@@ -189,7 +189,7 @@ class SecureCredentialManager {
   async storeCredentials(userId: string, exchange: string, apiKey: string, apiSecret: string, passphrase?: string): Promise<{ success: boolean; id?: string; error?: string }> {
     try {
       // Rate limiting check
-      if (!this.checkRateLimit(userId, 5, 3600000)) { // 5 operations per hour
+      if (!this.checkRateLimit(userId, 50, 3600000)) { // 50 operations per hour for sensitive ops
         return { success: false, error: 'Rate limit exceeded. Please try again later.' };
       }
 
