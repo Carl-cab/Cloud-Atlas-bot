@@ -516,6 +516,14 @@ serve(async (req) => {
       case 'get': {
         const result = await credentialManager.getCredentials(user.id, params.exchange);
         
+        // Return appropriate HTTP status code based on the result
+        if (!result.success) {
+          return new Response(JSON.stringify(result), {
+            status: result.error?.includes('not found') ? 404 : 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+        
         return new Response(JSON.stringify(result), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
