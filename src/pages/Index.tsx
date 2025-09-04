@@ -15,10 +15,11 @@ import { usePerformanceMonitor } from "@/hooks/usePerformanceMonitor";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { TrendingUp, BarChart3, Shield, Bell, Activity, Settings, Zap, Key, Rocket } from "lucide-react";
+import { TrendingUp, BarChart3, Shield, Bell, Activity, Settings, Zap, Key, Rocket, Globe } from "lucide-react";
 import { APIKeyManager } from '@/components/APIKeyManager';
 import { SecurityMonitor } from '@/components/SecurityMonitor';
 import { TradingSetupWizard } from '@/components/TradingSetupWizard';
+import { MCPDashboard } from '@/components/MCPDashboard';
 
 // Lazy load heavy components for better performance
 const AdvancedNotifications = lazy(() => import("@/components/AdvancedNotifications").then(module => ({ default: module.AdvancedNotifications })));
@@ -89,7 +90,7 @@ const Index = () => {
 
       <div className="container mx-auto px-4 py-6">
         <Tabs defaultValue="setup" className="w-full">
-          <TabsList className="grid w-full grid-cols-10">
+          <TabsList className="grid w-full grid-cols-11">
             <TabsTrigger value="setup" className="flex items-center gap-2">
               <Rocket className="h-4 w-4" />
               Setup
@@ -129,6 +130,10 @@ const Index = () => {
             <TabsTrigger value="security" className="flex items-center gap-2">
               <Key className="h-4 w-4" />
               Security
+            </TabsTrigger>
+            <TabsTrigger value="mcp" className="flex items-center gap-2">
+              <Globe className="h-4 w-4" />
+              MCP
             </TabsTrigger>
           </TabsList>
 
@@ -196,6 +201,10 @@ const Index = () => {
           <TabsContent value="security" className="space-y-4">
             <SecurityMonitor />
             <APIKeyManager />
+          </TabsContent>
+
+          <TabsContent value="mcp" className="space-y-4">
+            <MCPDashboard />
           </TabsContent>
         </Tabs>
       </div>
