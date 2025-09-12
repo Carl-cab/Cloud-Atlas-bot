@@ -37,6 +37,9 @@ import { WebSocketManager } from './WebSocketManager';
 import { EnhancedTradingInterface } from './EnhancedTradingInterface';
 import { RealTimeNotifications } from './RealTimeNotifications';
 import { SystemHealthMonitor } from './SystemHealthMonitor';
+import { AutonomousAgent } from './AutonomousAgent';
+import { ContinuousLearning } from './ContinuousLearning';
+import { SchedulingControls } from './SchedulingControls';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
@@ -900,6 +903,23 @@ export const CloudAtlasBot = () => {
 
         <TabsContent value="websockets" className="mt-6">
           <WebSocketManager />
+        </TabsContent>
+
+        <TabsContent value="autonomous" className="mt-6">
+          <AutonomousAgent />
+        </TabsContent>
+
+        <TabsContent value="learning" className="mt-6">
+          <ContinuousLearning />
+        </TabsContent>
+
+        <TabsContent value="scheduling" className="mt-6">
+          <SchedulingControls 
+            onScheduleChange={(isActive, stopTime) => {
+              console.log('Schedule changed:', { isActive, stopTime });
+            }}
+            onEmergencyStop={handleEmergencyStop}
+          />
         </TabsContent>
       </Tabs>
     </div>
