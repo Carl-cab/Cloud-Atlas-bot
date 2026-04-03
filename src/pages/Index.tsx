@@ -1,0 +1,171 @@
+import React, { useState, Suspense, lazy } from "react";
+import { RealTimeTradingDashboard } from "@/components/RealTimeTradingDashboard";
+import { WebSocketManager } from "@/components/WebSocketManager";
+import { MarketAnalysis } from "@/components/MarketAnalysis";
+import { TradingDashboard } from "@/components/TradingDashboard";
+import { PortfolioOverview } from "@/components/PortfolioOverview";
+import { RiskManagement } from "@/components/RiskManagement";
+import { NotificationCenter } from "@/components/NotificationCenter";
+import { RealTimeMetrics } from "@/components/RealTimeMetrics";
+import { BasicNotifications } from "@/components/BasicNotifications";
+import { GlobalCommandPalette } from "@/components/GlobalCommandPalette";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { usePerformanceMonitor } from "@/hooks/usePerformanceMonitor";
+import { Card, CardContent } from "@/components/ui/card";
+import { TrendingUp, BarChart3, Shield, Bell, Activity, Zap, Key, Rocket, Globe } from "lucide-react";
+import { APIKeyManager } from '@/components/APIKeyManager';
+import { SecurityMonitor } from '@/components/SecurityMonitor';
+import { TradingSetupWizard } from '@/components/TradingSetupWizard';
+import { MCPDashboard } from '@/components/MCPDashboard';
+
+// Lazy load heavy components for better performance
+const AdvancedNotifications = lazy(() => import("@/components/AdvancedNotifications").then(module => ({ default: module.AdvancedNotifications })));
+const PerformanceOptimizer = lazy(() => import("@/components/PerformanceOptimizer").then(module => ({ default: module.PerformanceOptimizer })));
+
+const Index = () => {
+  const [selectedPlatform] = useState("bybit");
+  const { markMilestone } = usePerformanceMonitor();
+
+  // Mark performance milestone when component mounts
+  React.useEffect(() => {
+    markMilestone('index-page-load');
+  }, [markMilestone]);
+
+  return (
+    <div className="min-h-screen bg-background">
+      <GlobalCommandPalette />
+
+      <div className="border-b">
+        <div className="flex h-16 items-center px-4">
+          <div className="flex items-center space-x-2">
+            <TrendingUp className="h-6 w-6" />
+            <h1 className="text-xl font-bold">Cloud Atlas Trading</h1>
+          </div>
+        </div>
+      </div>
+
+      <div className="container mx-auto px-4 py-6">
+        <Tabs defaultValue="setup" className="w-full">
+          <TabsList className="grid w-full grid-cols-11">
+            <TabsTrigger value="setup" className="flex items-center gap-2">
+              <Rocket className="h-4 w-4" />
+              Setup
+            </TabsTrigger>
+            <TabsTrigger value="dashboard" className="flex items-center gap-2">
+              <Activity className="h-4 w-4" />
+              Dashboard
+            </TabsTrigger>
+            <TabsTrigger value="metrics" className="flex items-center gap-2">
+              <BarChart3 className="h-4 w-4" />
+              Metrics
+            </TabsTrigger>
+            <TabsTrigger value="trading" className="flex items-center gap-2">
+              <TrendingUp className="h-4 w-4" />
+              Trading
+            </TabsTrigger>
+            <TabsTrigger value="analysis" className="flex items-center gap-2">
+              <BarChart3 className="h-4 w-4" />
+              Analysis
+            </TabsTrigger>
+            <TabsTrigger value="portfolio" className="flex items-center gap-2">
+              <Shield className="h-4 w-4" />
+              Portfolio
+            </TabsTrigger>
+            <TabsTrigger value="risk" className="flex items-center gap-2">
+              <Shield className="h-4 w-4" />
+              Risk
+            </TabsTrigger>
+            <TabsTrigger value="notifications" className="flex items-center gap-2">
+              <Bell className="h-4 w-4" />
+              Alerts
+            </TabsTrigger>
+            <TabsTrigger value="performance" className="flex items-center gap-2">
+              <Zap className="h-4 w-4" />
+              Performance
+            </TabsTrigger>
+            <TabsTrigger value="security" className="flex items-center gap-2">
+              <Key className="h-4 w-4" />
+              Security
+            </TabsTrigger>
+            <TabsTrigger value="mcp" className="flex items-center gap-2">
+              <Globe className="h-4 w-4" />
+              MCP
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="setup" className="space-y-4">
+            <TradingSetupWizard />
+          </TabsContent>
+
+          <TabsContent value="dashboard" className="space-y-4">
+            <RealTimeTradingDashboard />
+            <WebSocketManager />
+          </TabsContent>
+
+          <TabsContent value="metrics" className="space-y-4">
+            <RealTimeMetrics />
+          </TabsContent>
+
+          <TabsContent value="trading" className="space-y-4">
+            <TradingDashboard />
+          </TabsContent>
+
+          <TabsContent value="analysis" className="space-y-4">
+            <MarketAnalysis platform={selectedPlatform} />
+          </TabsContent>
+
+          <TabsContent value="portfolio" className="space-y-4">
+            <PortfolioOverview />
+          </TabsContent>
+
+          <TabsContent value="risk" className="space-y-4">
+            <RiskManagement />
+          </TabsContent>
+
+          <TabsContent value="notifications" className="space-y-4">
+            <BasicNotifications />
+            <NotificationCenter />
+            <Suspense fallback={
+              <Card>
+                <CardContent className="p-6">
+                  <div className="animate-pulse space-y-4">
+                    <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+                    <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+                  </div>
+                </CardContent>
+              </Card>
+            }>
+              <AdvancedNotifications />
+            </Suspense>
+          </TabsContent>
+
+          <TabsContent value="performance" className="space-y-4">
+            <Suspense fallback={
+              <Card>
+                <CardContent className="p-6">
+                  <div className="animate-pulse space-y-4">
+                    <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+                    <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+                  </div>
+                </CardContent>
+              </Card>
+            }>
+              <PerformanceOptimizer />
+            </Suspense>
+          </TabsContent>
+
+          <TabsContent value="security" className="space-y-4">
+            <SecurityMonitor />
+            <APIKeyManager />
+          </TabsContent>
+
+          <TabsContent value="mcp" className="space-y-4">
+            <MCPDashboard />
+          </TabsContent>
+        </Tabs>
+      </div>
+    </div>
+  );
+};
+
+export default Index;
