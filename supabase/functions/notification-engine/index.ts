@@ -8,7 +8,6 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const resend = new Resend(Deno.env.get("RESEND_API_KEY"));
 
 interface IncidentAlert {
   severity: 'info' | 'warning' | 'critical';
@@ -116,6 +115,7 @@ class NotificationEngine {
 
   // Send email via Resend
   async sendEmail(to: string, subject: string, html: string): Promise<boolean> {
+    const resend = new Resend(Deno.env.get("RESEND_API_KEY"));
     try {
       const { data, error } = await resend.emails.send({
         from: 'CloudAtlasBot <notifications@resend.dev>',
