@@ -164,7 +164,7 @@ curl -X POST \
 
 ## Monitoring agent
 
-The `monitoring-agent` edge function runs 11 health checks and logs every anomaly to the `agent_incidents` table. **All alerts are DB-only — no external messages are sent.**
+The `monitoring-agent` edge function runs 13 health checks and logs every anomaly to the `agent_incidents` table. **All alerts are DB-only — no external messages are sent.**
 
 ### What it monitors
 
