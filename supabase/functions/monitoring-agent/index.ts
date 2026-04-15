@@ -259,6 +259,141 @@ async function checkSymbolConcentration(sb: SB, userId: string): Promise<CheckRe
   return { name: 'symbol_concentration', status: 'ok', message: `Max concentration: ${concentrationPct.toFixed(0)}% (${maxSymbol})` };
 }
 
+// PNL_CONSISTENCY_TOLERANCE_PCT: if daily_pnl.realized_pnl deviates more than this
+// from the sum of exit trades' realized_pnl, flag a warning.
+const PNL_CONSISTENCY_TOLERANCE_PCT = 5;
+
+async function checkPnlConsistency(sb: SB, userId: string): Promise<CheckResult> {
+  const today = new Date().toISOString().split('T')[0];
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+
+  const [pnlRes, tradesRes] = await Promise.allSettled([
+    sb.from('daily_pnl')
+      .select('realized_pnl, total_trades')
+      .eq('user_id', userId)
+      .eq('date', today)
+      .maybeSingle(),
+    sb.from('executed_trades')
+      .select('realized_pnl')
+      .eq('user_id', userId)
+      .gte('timestamp', todayStart.toISOString()),
+  ]);
+
+  if (pnlRes.status === 'rejected' || tradesRes.status === 'rejected') {
+    return { name: 'pnl_consistency', status: 'warning', message: 'Could not fetch data for PnL consistency check' };
+  }
+
+  const pnl = pnlRes.value.data;
+  const trades = tradesRes.value.data ?? [];
+
+  if (!pnl) {
+    // No daily_pnl record yet — not a consistency error, just no data
+    return { name: 'pnl_consistency', status: 'ok', message: 'No daily_pnl record for today yet' };
+  }
+
+  // Sum realized_pnl from exit/stop_loss/take_profit trades only
+  const sumTradesPnl = trades.reduce((sum: number, t: any) => sum + Number(t.realized_pnl ?? 0), 0);
+  const recordedPnl = Number(pnl.realized_pnl);
+  const tradeCount = trades.length;
+  const recordedCount = Number(pnl.total_trades);
+
+  // Check PnL mismatch
+  const pnlDiff = Math.abs(recordedPnl - sumTradesPnl);
+  const pnlBase = Math.max(Math.abs(recordedPnl), Math.abs(sumTradesPnl), 1);
+  const pnlDiffPct = (pnlDiff / pnlBase) * 100;
+
+  // Check trade count mismatch
+  const countMismatch = Math.abs(tradeCount - recordedCount);
+
+  if (pnlDiffPct > PNL_CONSISTENCY_TOLERANCE_PCT || countMismatch > 2) {
+    return {
+      name: 'pnl_consistency',
+      status: 'warning',
+      message: `PnL mismatch: daily_pnl=$${recordedPnl.toFixed(2)} vs trades_sum=$${sumTradesPnl.toFixed(2)} (${pnlDiffPct.toFixed(1)}%), trades: ${recordedCount} recorded vs ${tradeCount} in table`,
+      context: {
+        recorded_pnl: recordedPnl,
+        trades_sum_pnl: sumTradesPnl,
+        diff_pct: pnlDiffPct,
+        recorded_trade_count: recordedCount,
+        actual_trade_count: tradeCount,
+      },
+    };
+  }
+
+  return {
+    name: 'pnl_consistency',
+    status: 'ok',
+    message: `PnL consistent: $${recordedPnl.toFixed(2)} (${tradeCount} trades)`,
+  };
+}
+
+const GHOST_POSITION_DAYS = 7;
+
+async function checkSystemHealth(sb: SB, userId: string, isActive: boolean): Promise<CheckResult> {
+  const today = new Date().toISOString().split('T')[0];
+  const ghostCutoff = new Date(Date.now() - GHOST_POSITION_DAYS * 24 * 60 * 60 * 1000).toISOString();
+
+  const [dailyPnlRes, riskMonRes, ghostPosRes] = await Promise.allSettled([
+    // Check: active bot should have a daily_pnl record for today
+    sb.from('daily_pnl')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .eq('date', today),
+
+    // Check: risk_limits_monitoring should have rows when bot is active
+    sb.from('risk_limits_monitoring')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', userId),
+
+    // Check: positions open for more than GHOST_POSITION_DAYS days
+    sb.from('trading_positions')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .eq('status', 'open')
+      .lt('opened_at', ghostCutoff),
+  ]);
+
+  const issues: string[] = [];
+  const contextData: Record<string, unknown> = {};
+
+  // Missing daily_pnl when bot is active
+  if (isActive && dailyPnlRes.status === 'fulfilled') {
+    if ((dailyPnlRes.value.count ?? 0) === 0) {
+      issues.push('No daily_pnl record for today despite bot being active');
+      contextData.missing_daily_pnl = true;
+    }
+  }
+
+  // Empty risk monitoring table when bot is active
+  if (isActive && riskMonRes.status === 'fulfilled') {
+    if ((riskMonRes.value.count ?? 0) === 0) {
+      issues.push('risk_limits_monitoring table is empty while bot is active');
+      contextData.empty_risk_monitoring = true;
+    }
+  }
+
+  // Ghost positions
+  if (ghostPosRes.status === 'fulfilled') {
+    const ghostCount = ghostPosRes.value.count ?? 0;
+    if (ghostCount > 0) {
+      issues.push(`${ghostCount} open position(s) older than ${GHOST_POSITION_DAYS} days`);
+      contextData.ghost_positions = ghostCount;
+    }
+  }
+
+  if (issues.length > 0) {
+    return {
+      name: 'system_health',
+      status: 'warning',
+      message: issues.join('; '),
+      context: contextData,
+    };
+  }
+
+  return { name: 'system_health', status: 'ok', message: 'System health checks passed' };
+}
+
 async function logIncident(sb: SB, payload: IncidentPayload, dryRun: boolean): Promise<string | null> {
   if (dryRun) {
     console.log('[dry_run] Would log incident:', payload.title);
@@ -286,39 +421,6 @@ async function logIncident(sb: SB, payload: IncidentPayload, dryRun: boolean): P
   return (data as { id: string }).id;
 }
 
-async function notifyIncident(
-  sb: SB,
-  userId: string,
-  payload: IncidentPayload,
-  botState: { mode: string; is_active: boolean; daily_pnl: number },
-  dryRun: boolean,
-): Promise<void> {
-  if (dryRun) {
-    console.log('[dry_run] Would notify incident:', payload.title);
-    return;
-  }
-  try {
-    await sb.functions.invoke('notification-engine', {
-      body: {
-        action: 'send_incident_alert',
-        user_id: userId,
-        incident: {
-          severity:      payload.severity,
-          incident_type: payload.incident_type,
-          title:         payload.title,
-          description:   payload.description,
-          mode:          botState.mode,
-          is_active:     botState.is_active,
-          daily_pnl:     botState.daily_pnl,
-          actions_taken: payload.action_taken,
-        },
-      },
-      headers: { Authorization: `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}` },
-    });
-  } catch (err) {
-    console.error('Failed to send incident notification:', err instanceof Error ? err.message : String(err));
-  }
-}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -365,7 +467,7 @@ serve(async (req) => {
     const checkNames = [
       'signal_freshness', 'market_data_freshness', 'position_count',
       'daily_loss', 'risk_limits', 'risk_events', 'notification_failures',
-      'recent_trades', 'symbol_concentration',
+      'recent_trades', 'symbol_concentration', 'pnl_consistency', 'system_health',
     ] as const;
 
     const checkResults = await Promise.allSettled([
@@ -378,6 +480,8 @@ serve(async (req) => {
       checkNotificationFailures(sb, user_id),
       checkRecentTrades(sb, user_id, isActive, mode),
       checkSymbolConcentration(sb, user_id),
+      checkPnlConsistency(sb, user_id),
+      checkSystemHealth(sb, user_id, isActive),
     ]);
 
     const [
@@ -390,6 +494,8 @@ serve(async (req) => {
       notifFailureCheck,
       recentTradesCheck,
       concentrationCheck,
+      pnlConsistencyCheck,
+      systemHealthCheck,
     ] = checkResults.map((result, i): CheckResult =>
       result.status === 'fulfilled'
         ? result.value
@@ -398,7 +504,8 @@ serve(async (req) => {
 
     allChecks.push(
       signalCheck, marketDataCheck, positionCheck, dailyLossCheck,
-      riskLimitsCheck, riskEventsCheck, notifFailureCheck, recentTradesCheck, concentrationCheck,
+      riskLimitsCheck, riskEventsCheck, notifFailureCheck, recentTradesCheck,
+      concentrationCheck, pnlConsistencyCheck, systemHealthCheck,
     );
 
     // Composite: both data sources stale while bot is active = critical
@@ -413,11 +520,6 @@ serve(async (req) => {
     const hasCritical = allChecks.some(c => c.status === 'critical');
     const hasWarning = allChecks.some(c => c.status === 'warning');
     const overallStatus = hasCritical ? 'critical' : hasWarning ? 'warning' : 'healthy';
-
-    const today = new Date().toISOString().split('T')[0];
-    const { data: pnlData } = await sb.from('daily_pnl').select('total_pnl').eq('user_id', user_id).eq('date', today).maybeSingle();
-    const dailyPnl = Number((pnlData as any)?.total_pnl ?? 0);
-    const botState = { mode, is_active: isActive, daily_pnl: dailyPnl };
 
     for (const check of allChecks) {
       if (check.status === 'ok') continue;
@@ -473,8 +575,6 @@ serve(async (req) => {
 
       const incidentId = await logIncident(sb, incidentPayload, dry_run);
       if (incidentId) incidentIds.push(incidentId);
-
-      await notifyIncident(sb, user_id, incidentPayload, botState, dry_run);
     }
 
     return new Response(JSON.stringify({
