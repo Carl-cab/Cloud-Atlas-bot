@@ -12,12 +12,12 @@ CREATE TABLE IF NOT EXISTS public.daily_reports (
   total_trades        INTEGER     NOT NULL DEFAULT 0,
   winning_trades      INTEGER     NOT NULL DEFAULT 0,
   losing_trades       INTEGER     NOT NULL DEFAULT 0,
-  win_rate            NUMERIC     NOT NULL DEFAULT 0,
+  win_rate            NUMERIC     NOT NULL DEFAULT 0 CHECK (win_rate >= 0 AND win_rate <= 100),
   max_drawdown        NUMERIC     NOT NULL DEFAULT 0,
   open_positions_count INTEGER    NOT NULL DEFAULT 0,
   risk_events_count   INTEGER     NOT NULL DEFAULT 0,
   incidents_count     INTEGER     NOT NULL DEFAULT 0,
-  current_mode        TEXT        NOT NULL DEFAULT 'paper',
+  current_mode        TEXT        NOT NULL DEFAULT 'paper' CHECK (current_mode IN ('paper', 'live')),
   bot_active_state    BOOLEAN     NOT NULL DEFAULT false,
   generated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
   created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -31,7 +31,7 @@ ALTER TABLE public.daily_reports ENABLE ROW LEVEL SECURITY;
 
 DO $$ BEGIN
   IF NOT EXISTS (
-    SELECT 1 FROM pg_policies WHERE tablename = 'daily_reports' AND policyname = 'Users can view their own daily reports'
+    SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'daily_reports' AND policyname = 'Users can view their own daily reports'
   ) THEN
     CREATE POLICY "Users can view their own daily reports"
       ON public.daily_reports FOR SELECT
@@ -39,7 +39,7 @@ DO $$ BEGIN
   END IF;
 
   IF NOT EXISTS (
-    SELECT 1 FROM pg_policies WHERE tablename = 'daily_reports' AND policyname = 'Service role can insert daily reports'
+    SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'daily_reports' AND policyname = 'Service role can insert daily reports'
   ) THEN
     CREATE POLICY "Service role can insert daily reports"
       ON public.daily_reports FOR INSERT
@@ -47,11 +47,20 @@ DO $$ BEGIN
   END IF;
 
   IF NOT EXISTS (
-    SELECT 1 FROM pg_policies WHERE tablename = 'daily_reports' AND policyname = 'Service role can update daily reports'
+    SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'daily_reports' AND policyname = 'Service role can update daily reports'
   ) THEN
     CREATE POLICY "Service role can update daily reports"
       ON public.daily_reports FOR UPDATE
-      USING (auth.role() = 'service_role' OR auth.uid() = user_id);
+      USING  (auth.role() = 'service_role' OR auth.uid() = user_id)
+      WITH CHECK (auth.role() = 'service_role' OR auth.uid() = user_id);
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'daily_reports' AND policyname = 'Service role can delete daily reports'
+  ) THEN
+    CREATE POLICY "Service role can delete daily reports"
+      ON public.daily_reports FOR DELETE
+      USING (auth.role() = 'service_role');
   END IF;
 END $$;
 
