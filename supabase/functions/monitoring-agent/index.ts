@@ -265,8 +265,7 @@ const PNL_CONSISTENCY_TOLERANCE_PCT = 5;
 
 async function checkPnlConsistency(sb: SB, userId: string): Promise<CheckResult> {
   const today = new Date().toISOString().split('T')[0];
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
+  const todayStart = new Date(today + 'T00:00:00.000Z');
 
   const [pnlRes, tradesRes] = await Promise.allSettled([
     sb.from('daily_pnl')
@@ -277,6 +276,7 @@ async function checkPnlConsistency(sb: SB, userId: string): Promise<CheckResult>
     sb.from('executed_trades')
       .select('realized_pnl')
       .eq('user_id', userId)
+      .in('trade_type', ['exit', 'stop_loss', 'take_profit'])
       .gte('timestamp', todayStart.toISOString()),
   ]);
 
@@ -300,7 +300,7 @@ async function checkPnlConsistency(sb: SB, userId: string): Promise<CheckResult>
 
   // Check PnL mismatch
   const pnlDiff = Math.abs(recordedPnl - sumTradesPnl);
-  const pnlBase = Math.max(Math.abs(recordedPnl), Math.abs(sumTradesPnl), 1);
+  const pnlBase = Math.max((Math.abs(recordedPnl) + Math.abs(sumTradesPnl)) / 2, 1);
   const pnlDiffPct = (pnlDiff / pnlBase) * 100;
 
   // Check trade count mismatch
@@ -358,16 +358,22 @@ async function checkSystemHealth(sb: SB, userId: string, isActive: boolean): Pro
   const contextData: Record<string, unknown> = {};
 
   // Missing daily_pnl when bot is active
-  if (isActive && dailyPnlRes.status === 'fulfilled') {
-    if ((dailyPnlRes.value.count ?? 0) === 0) {
+  if (isActive) {
+    if (dailyPnlRes.status === 'rejected') {
+      issues.push('Could not query daily_pnl record');
+      contextData.daily_pnl_query_error = true;
+    } else if ((dailyPnlRes.value.count ?? 0) === 0) {
       issues.push('No daily_pnl record for today despite bot being active');
       contextData.missing_daily_pnl = true;
     }
   }
 
   // Empty risk monitoring table when bot is active
-  if (isActive && riskMonRes.status === 'fulfilled') {
-    if ((riskMonRes.value.count ?? 0) === 0) {
+  if (isActive) {
+    if (riskMonRes.status === 'rejected') {
+      issues.push('Could not query risk_limits_monitoring');
+      contextData.risk_mon_query_error = true;
+    } else if ((riskMonRes.value.count ?? 0) === 0) {
       issues.push('risk_limits_monitoring table is empty while bot is active');
       contextData.empty_risk_monitoring = true;
     }
