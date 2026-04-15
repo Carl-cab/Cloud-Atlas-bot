@@ -371,16 +371,8 @@ ${incident.description ? `<p><span class="label">Details:</span><span class="val
         is_active:        config?.is_active             ?? false,
       };
     } catch (error) {
-      console.error('Error fetching trading stats:', error);
-      // Return zero-filled defaults so callers don't render undefined
-      return {
-        starting_balance: 0, ending_balance: 0, realized_pnl: 0,
-        unrealized_pnl: 0, total_pnl: 0, daily_pnl: 0,
-        total_trades: 0, winning_trades: 0, losing_trades: 0,
-        win_rate: 0, max_drawdown: 0, open_positions: 0,
-        risk_events: 0, portfolio_value: 0,
-        mode: 'paper', is_active: false,
-      };
+      console.error('getTradingStats error:', error instanceof Error ? error.message : String(error));
+      throw error;
     }
   }
 
@@ -388,13 +380,16 @@ ${incident.description ? `<p><span class="label">Details:</span><span class="val
     const stats = await this.getTradingStats(userId);
     const today = new Date().toISOString().split('T')[0];
     const todayStart = new Date(today + 'T00:00:00.000Z');
+    const tomorrowStart = new Date(todayStart);
+    tomorrowStart.setUTCDate(tomorrowStart.getUTCDate() + 1);
 
-    // Count incidents for today
+    // Count incidents for today (bounded to UTC day)
     const { count: incidentsCount } = await this.supabase
       .from('agent_incidents')
       .select('id', { count: 'exact', head: true })
       .eq('user_id', userId)
-      .gte('detected_at', todayStart.toISOString());
+      .gte('detected_at', todayStart.toISOString())
+      .lt('detected_at', tomorrowStart.toISOString());
 
     const report = {
       user_id:              userId,
@@ -407,12 +402,12 @@ ${incident.description ? `<p><span class="label">Details:</span><span class="val
       total_trades:         stats.total_trades         ?? 0,
       winning_trades:       stats.winning_trades       ?? 0,
       losing_trades:        stats.losing_trades        ?? 0,
-      win_rate:             stats.win_rate             ?? 0,
+      win_rate:             stats.win_rate             ?? 0,  // stored as 0-100 (e.g. 75.5 = 75.5%)
       max_drawdown:         stats.max_drawdown         ?? 0,
       open_positions_count: stats.open_positions       ?? 0,
       risk_events_count:    stats.risk_events          ?? 0,
       incidents_count:      incidentsCount             ?? 0,
-      current_mode:         stats.mode                 ?? 'paper',
+      current_mode:         (['paper', 'live'] as const).includes(stats.mode) ? stats.mode : 'paper',
       bot_active_state:     stats.is_active            ?? false,
       generated_at:         new Date().toISOString(),
     };
@@ -426,6 +421,10 @@ ${incident.description ? `<p><span class="label">Details:</span><span class="val
     if (error) {
       console.error('storeDailyReport upsert error:', error.message);
       throw new Error(`Failed to store daily report: ${error.message}`);
+    }
+
+    if (!data) {
+      throw new Error('storeDailyReport: upsert returned no data');
     }
 
     return { id: (data as { id: string }).id, ...report };
@@ -621,7 +620,7 @@ serve(async (req) => {
 
       case 'store_daily_report': {
         const stored = await engine.storeDailyReport(request.user_id);
-        await engine.logNotification(request.user_id, 'daily_report_stored', 'sent', { report_id: stored.id });
+        await engine.logNotification(request.user_id, 'daily_report_stored', 'stored', { report_id: stored.id });
         return new Response(JSON.stringify({ success: true, report: stored }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
