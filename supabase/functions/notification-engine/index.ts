@@ -21,7 +21,7 @@ interface IncidentAlert {
 }
 
 interface NotificationRequest {
-  action: 'send_test' | 'generate_report' | 'send_alert' | 'send_incident_alert';
+  action: 'send_test' | 'generate_report' | 'send_alert' | 'send_incident_alert' | 'store_daily_report';
   type?: 'telegram' | 'email';
   user_id: string;
   email?: string;
@@ -384,6 +384,53 @@ ${incident.description ? `<p><span class="label">Details:</span><span class="val
     }
   }
 
+  async storeDailyReport(userId: string): Promise<Record<string, unknown>> {
+    const stats = await this.getTradingStats(userId);
+    const today = new Date().toISOString().split('T')[0];
+    const todayStart = new Date(today + 'T00:00:00.000Z');
+
+    // Count incidents for today
+    const { count: incidentsCount } = await this.supabase
+      .from('agent_incidents')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .gte('detected_at', todayStart.toISOString());
+
+    const report = {
+      user_id:              userId,
+      date:                 today,
+      starting_balance:     stats.starting_balance     ?? 0,
+      ending_balance:       stats.ending_balance       ?? 0,
+      realized_pnl:         stats.realized_pnl         ?? 0,
+      unrealized_pnl:       stats.unrealized_pnl       ?? 0,
+      total_pnl:            stats.total_pnl            ?? 0,
+      total_trades:         stats.total_trades         ?? 0,
+      winning_trades:       stats.winning_trades       ?? 0,
+      losing_trades:        stats.losing_trades        ?? 0,
+      win_rate:             stats.win_rate             ?? 0,
+      max_drawdown:         stats.max_drawdown         ?? 0,
+      open_positions_count: stats.open_positions       ?? 0,
+      risk_events_count:    stats.risk_events          ?? 0,
+      incidents_count:      incidentsCount             ?? 0,
+      current_mode:         stats.mode                 ?? 'paper',
+      bot_active_state:     stats.is_active            ?? false,
+      generated_at:         new Date().toISOString(),
+    };
+
+    const { data, error } = await this.supabase
+      .from('daily_reports')
+      .upsert(report, { onConflict: 'user_id,date' })
+      .select('id')
+      .single();
+
+    if (error) {
+      console.error('storeDailyReport upsert error:', error.message);
+      throw new Error(`Failed to store daily report: ${error.message}`);
+    }
+
+    return { id: (data as { id: string }).id, ...report };
+  }
+
   // Log notification event
   async logNotification(userId: string, type: string, status: string, details: any): Promise<void> {
     try {
@@ -568,6 +615,14 @@ serve(async (req) => {
         });
 
         return new Response(JSON.stringify({ success: true, sent_via: sent }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      case 'store_daily_report': {
+        const stored = await engine.storeDailyReport(request.user_id);
+        await engine.logNotification(request.user_id, 'daily_report_stored', 'sent', { report_id: stored.id });
+        return new Response(JSON.stringify({ success: true, report: stored }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
