@@ -293,30 +293,25 @@ async function checkPnlConsistency(sb: SB, userId: string): Promise<CheckResult>
   }
 
   // Sum realized_pnl from exit/stop_loss/take_profit trades only
+  // (daily_pnl.total_trades counts ALL trades including entries, so we only compare PnL values)
   const sumTradesPnl = trades.reduce((sum: number, t: any) => sum + Number(t.realized_pnl ?? 0), 0);
   const recordedPnl = Number(pnl.realized_pnl);
-  const tradeCount = trades.length;
-  const recordedCount = Number(pnl.total_trades);
 
-  // Check PnL mismatch
+  // Check PnL mismatch using average-magnitude denominator to avoid false positives
+  // when values have opposite signs (e.g. +0.50 vs -0.50)
   const pnlDiff = Math.abs(recordedPnl - sumTradesPnl);
   const pnlBase = Math.max((Math.abs(recordedPnl) + Math.abs(sumTradesPnl)) / 2, 1);
   const pnlDiffPct = (pnlDiff / pnlBase) * 100;
 
-  // Check trade count mismatch
-  const countMismatch = Math.abs(tradeCount - recordedCount);
-
-  if (pnlDiffPct > PNL_CONSISTENCY_TOLERANCE_PCT || countMismatch > 2) {
+  if (pnlDiffPct > PNL_CONSISTENCY_TOLERANCE_PCT) {
     return {
       name: 'pnl_consistency',
       status: 'warning',
-      message: `PnL mismatch: daily_pnl=$${recordedPnl.toFixed(2)} vs trades_sum=$${sumTradesPnl.toFixed(2)} (${pnlDiffPct.toFixed(1)}%), trades: ${recordedCount} recorded vs ${tradeCount} in table`,
+      message: `PnL mismatch: daily_pnl=$${recordedPnl.toFixed(2)} vs trades_sum=$${sumTradesPnl.toFixed(2)} (${pnlDiffPct.toFixed(1)}% deviation)`,
       context: {
         recorded_pnl: recordedPnl,
         trades_sum_pnl: sumTradesPnl,
         diff_pct: pnlDiffPct,
-        recorded_trade_count: recordedCount,
-        actual_trade_count: tradeCount,
       },
     };
   }
@@ -324,7 +319,7 @@ async function checkPnlConsistency(sb: SB, userId: string): Promise<CheckResult>
   return {
     name: 'pnl_consistency',
     status: 'ok',
-    message: `PnL consistent: $${recordedPnl.toFixed(2)} (${tradeCount} trades)`,
+    message: `PnL consistent: $${recordedPnl.toFixed(2)} (${trades.length} closing trades)`,
   };
 }
 
