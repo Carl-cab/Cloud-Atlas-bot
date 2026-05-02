@@ -4,6 +4,28 @@
  */
 
 import { supabase } from '@/integrations/supabase/client';
+import { flags as defaultFlags, type MCPFlags } from './flags';
+
+export class MCPDisabledError extends Error {
+  constructor(public feature: keyof MCPFlags, public uri?: string) {
+    super(
+      `MCP feature disabled: ${feature}${uri ? ` (${uri})` : ''}`
+    );
+    this.name = 'MCPDisabledError';
+  }
+}
+
+const RESOURCE_FLAG_MAP: Record<string, keyof MCPFlags> = {
+  'mcp://market-data/binance': 'multiExchange',
+  'mcp://sentiment/social': 'sentiment',
+  'mcp://blockchain/metrics': 'onchain',
+  'mcp://economic/calendar': 'economicCalendar',
+};
+
+const TOOL_FLAG_MAP: Record<string, keyof MCPFlags> = {
+  'fetch-news-sentiment': 'sentiment',
+  'analyze-onchain-metrics': 'onchain',
+};
 
 export interface MCPResource {
   uri: string;
@@ -35,8 +57,10 @@ export class MCPServer {
 
   private resources: Map<string, MCPResource> = new Map();
   private tools: Map<string, MCPTool> = new Map();
+  private flags: MCPFlags;
 
-  constructor() {
+  constructor(opts: { flags?: MCPFlags } = {}) {
+    this.flags = opts.flags ?? defaultFlags;
     this.initializeResources();
     this.initializeTools();
   }
@@ -193,11 +217,17 @@ export class MCPServer {
   }
 
   async listResources(): Promise<MCPResource[]> {
-    return Array.from(this.resources.values());
+    return Array.from(this.resources.values()).filter((r) => {
+      const flag = RESOURCE_FLAG_MAP[r.uri];
+      return flag === undefined || this.flags[flag];
+    });
   }
 
   async listTools(): Promise<MCPTool[]> {
-    return Array.from(this.tools.values());
+    return Array.from(this.tools.values()).filter((t) => {
+      const flag = TOOL_FLAG_MAP[t.name];
+      return flag === undefined || this.flags[flag];
+    });
   }
 
   async readResource(uri: string): Promise<any> {
