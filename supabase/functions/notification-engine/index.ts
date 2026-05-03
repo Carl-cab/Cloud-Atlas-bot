@@ -8,10 +8,20 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const resend = new Resend(Deno.env.get("RESEND_API_KEY"));
+
+interface IncidentAlert {
+  severity: 'info' | 'warning' | 'critical';
+  incident_type: string;
+  title: string;
+  description?: string;
+  mode: string;
+  is_active: boolean;
+  daily_pnl: number;
+  actions_taken: string[];
+}
 
 interface NotificationRequest {
-  action: 'send_test' | 'generate_report' | 'send_alert';
+  action: 'send_test' | 'generate_report' | 'send_alert' | 'send_incident_alert' | 'store_daily_report';
   type?: 'telegram' | 'email';
   user_id: string;
   email?: string;
@@ -19,6 +29,7 @@ interface NotificationRequest {
   report_type?: string;
   send_telegram?: boolean;
   send_email?: boolean;
+  incident?: IncidentAlert;
 }
 
 class NotificationEngine {
@@ -104,6 +115,7 @@ class NotificationEngine {
 
   // Send email via Resend
   async sendEmail(to: string, subject: string, html: string): Promise<boolean> {
+    const resend = new Resend(Deno.env.get("RESEND_API_KEY"));
     try {
       const { data, error } = await resend.emails.send({
         from: 'CloudAtlasBot <notifications@resend.dev>',
@@ -195,11 +207,15 @@ class NotificationEngine {
                 </div>
               ` : ''}
 
-              <h3>🎯 Performance Highlights</h3>
+              <h3>📋 Session Summary</h3>
               <ul>
-                <li>Best performing strategy: Technical Analysis Bot</li>
-                <li>Most profitable pair: BTC/USD (${((stats.daily_pnl || 0) * 0.6).toFixed(2)})</li>
-                <li>Active risk management: ${stats.risk_events || 0} events handled</li>
+                <li>Mode: <strong>${stats.mode || 'paper'}</strong> ${stats.is_active ? '(Active)' : '(Paused)'}</li>
+                <li>Realized P&L: <strong class="${(stats.realized_pnl || 0) >= 0 ? 'positive' : 'negative'}">$${(stats.realized_pnl || 0).toFixed(2)}</strong></li>
+                <li>Unrealized P&L: <strong class="${(stats.unrealized_pnl || 0) >= 0 ? 'positive' : 'negative'}">$${(stats.unrealized_pnl || 0).toFixed(2)}</strong></li>
+                <li>Winning trades: <strong>${stats.winning_trades || 0}</strong> / Losing: <strong>${stats.losing_trades || 0}</strong></li>
+                <li>Max drawdown: <strong>${(stats.max_drawdown || 0).toFixed(2)}%</strong></li>
+                <li>Open positions: <strong>${stats.open_positions || 0}</strong></li>
+                <li>Risk events today: <strong>${stats.risk_events || 0}</strong></li>
               </ul>
             </div>
             
@@ -215,50 +231,203 @@ class NotificationEngine {
 
   // Generate Telegram message
   generateTelegramReport(stats: any, reportType: string): string {
-    const riskEmoji = stats.risk_score <= 3 ? '🟢' : stats.risk_score <= 7 ? '🟡' : '🔴';
-    const pnlEmoji = stats.daily_pnl >= 0 ? '📈' : '📉';
-    
-    return `
-🤖 <b>CloudAtlasBot ${reportType.charAt(0).toUpperCase() + reportType.slice(1)} Report</b>
+    const pnlEmoji = (stats.daily_pnl ?? 0) >= 0 ? '📈' : '📉';
+    const statusEmoji = stats.is_active ? '🟢' : '⏸';
+    const modeLabel = (stats.mode || 'paper').toUpperCase();
+
+    return `🤖 <b>CloudAtlasBot ${reportType.charAt(0).toUpperCase() + reportType.slice(1)} Report</b>
 📅 ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
 
-💰 <b>Performance Overview:</b>
-${pnlEmoji} Daily P&L: <b>$${(stats.daily_pnl || 0).toFixed(2)}</b>
-📊 Win Rate: <b>${(stats.win_rate || 0).toFixed(1)}%</b>
-💼 Portfolio: <b>$${(stats.portfolio_value || 0).toFixed(2)}</b>
-${riskEmoji} Risk Score: <b>${(stats.risk_score || 0).toFixed(1)}/10</b>
+${statusEmoji} Mode: <b>${modeLabel}</b> ${stats.is_active ? '(Active)' : '(Paused)'}
 
-📈 <b>Trading Summary:</b>
-• Total Trades: ${stats.total_trades || 0}
-• Successful: ${stats.successful_trades || 0}
-• Total P&L: $${(stats.total_pnl || 0).toFixed(2)}
+💰 <b>P&amp;L:</b>
+${pnlEmoji} Daily P&amp;L: <b>$${(stats.daily_pnl || 0).toFixed(2)}</b>
+📊 Realized: <b>$${(stats.realized_pnl || 0).toFixed(2)}</b>
+📐 Unrealized: <b>$${(stats.unrealized_pnl || 0).toFixed(2)}</b>
+💼 Balance: <b>$${(stats.portfolio_value || 0).toFixed(2)}</b>
 
-${stats.risk_score > 7 ? '⚠️ <b>Risk Alert:</b> High risk detected. Consider reducing exposure.' : '✅ Risk levels within acceptable range.'}
+📈 <b>Trades:</b>
+• Total: ${stats.total_trades || 0} | Won: ${stats.winning_trades || 0} | Lost: ${stats.losing_trades || 0}
+• Win rate: ${(stats.win_rate || 0).toFixed(1)}%
+• Max drawdown: ${(stats.max_drawdown || 0).toFixed(2)}%
+• Open positions: ${stats.open_positions || 0}
+• Risk events: ${stats.risk_events || 0}
 
-<i>Generated at ${new Date().toLocaleTimeString()}</i>
-    `.trim();
+<i>Generated at ${new Date().toLocaleTimeString()}</i>`.trim();
   }
 
-  // Get trading statistics
+  generateIncidentTelegramAlert(incident: IncidentAlert): string {
+    const sevEmoji: Record<string, string> = { info: 'ℹ️', warning: '⚠️', critical: '🚨' };
+    const emoji = sevEmoji[incident.severity] || '❗';
+    const pnlSign = incident.daily_pnl >= 0 ? '+' : '';
+    const actions = incident.actions_taken.length > 0
+      ? incident.actions_taken.map(a => `  • ${a}`).join('\n')
+      : '  • none';
+
+    return `${emoji} <b>[${incident.severity.toUpperCase()}] ${incident.title}</b>
+
+<b>Type:</b> ${incident.incident_type}
+<b>Mode:</b> ${incident.mode.toUpperCase()} ${incident.is_active ? '(Active)' : '(Paused)'}
+<b>Daily P&amp;L:</b> ${pnlSign}$${incident.daily_pnl.toFixed(2)}
+${incident.description ? `<b>Details:</b> ${incident.description}\n` : ''}<b>Actions taken:</b>
+${actions}
+
+<i>${new Date().toLocaleTimeString()}</i>`.trim();
+  }
+
+  generateIncidentEmailHTML(incident: IncidentAlert): string {
+    const severityColor: Record<string, string> = {
+      info: '#17a2b8',
+      warning: '#ffc107',
+      critical: '#dc3545',
+    };
+    const color = severityColor[incident.severity] || '#6c757d';
+    const actions = incident.actions_taken.length > 0
+      ? incident.actions_taken.map(a => `<li>${a}</li>`).join('')
+      : '<li>none</li>';
+
+    return `<!DOCTYPE html><html><head><meta charset="utf-8">
+<style>body{font-family:Arial,sans-serif;margin:0;padding:20px;background:#f8f9fa}
+.container{max-width:600px;margin:0 auto;background:white;border-radius:8px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.1)}
+.header{background:${color};color:white;padding:24px 20px}
+.content{padding:24px 20px}.footer{background:#f8f9fa;padding:16px;text-align:center;font-size:12px;color:#666}
+.label{font-weight:bold;color:#555}.value{margin-left:6px}</style></head>
+<body><div class="container">
+<div class="header"><h2>${incident.severity.toUpperCase()}: ${incident.title}</h2></div>
+<div class="content">
+<p><span class="label">Incident type:</span><span class="value">${incident.incident_type}</span></p>
+<p><span class="label">Mode:</span><span class="value">${incident.mode.toUpperCase()} ${incident.is_active ? '(Active)' : '(Paused)'}</span></p>
+<p><span class="label">Daily P&amp;L:</span><span class="value">$${incident.daily_pnl.toFixed(2)}</span></p>
+${incident.description ? `<p><span class="label">Details:</span><span class="value">${incident.description}</span></p>` : ''}
+<h3>Actions taken</h3><ul>${actions}</ul>
+<p style="font-size:12px;color:#999">Detected at ${new Date().toLocaleString()}</p>
+</div><div class="footer">CloudAtlasBot monitoring system</div>
+</div></body></html>`;
+  }
+
+  // Get trading statistics from real DB tables
   async getTradingStats(userId: string): Promise<any> {
     try {
-      // In a real implementation, you would fetch actual trading data
-      // For now, we'll return mock data that would come from your trading analytics
+      const today = new Date().toISOString().split('T')[0];
+
+      const [pnlRes, posRes, riskRes, configRes] = await Promise.all([
+        this.supabase
+          .from('daily_pnl')
+          .select('starting_balance,ending_balance,realized_pnl,unrealized_pnl,total_pnl,total_trades,winning_trades,losing_trades,win_rate,max_drawdown')
+          .eq('user_id', userId)
+          .eq('date', today)
+          .maybeSingle(),
+
+        this.supabase
+          .from('trading_positions')
+          .select('unrealized_pnl')
+          .eq('user_id', userId)
+          .eq('status', 'open'),
+
+        this.supabase
+          .from('risk_events')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', userId)
+          .gte('created_at', new Date(new Date().setHours(0, 0, 0, 0)).toISOString()),
+
+        this.supabase
+          .from('bot_config')
+          .select('mode,is_active,capital_cad')
+          .eq('user_id', userId)
+          .maybeSingle(),
+      ]);
+
+      if (pnlRes.error) console.error('daily_pnl query error:', pnlRes.error.message);
+      if (posRes.error) console.error('trading_positions query error:', posRes.error.message);
+      if (riskRes.error) console.error('risk_events query error:', riskRes.error.message);
+      if (configRes.error) console.error('bot_config query error:', configRes.error.message);
+
+      const pnl = pnlRes.data;
+      const openPositions = posRes.data ?? [];
+      const riskEventsCount = riskRes.count ?? 0;
+      const config = configRes.data;
+
+      const unrealizedTotal = openPositions.reduce(
+        (sum: number, p: any) => sum + Number(p.unrealized_pnl ?? 0),
+        0,
+      );
+
       return {
-        total_trades: 47,
-        successful_trades: 32,
-        total_pnl: 1245.88,
-        daily_pnl: 89.32,
-        win_rate: 68.1,
-        avg_trade_duration: "2h 34m",
-        portfolio_value: 12458.32,
-        risk_score: 7.2,
-        risk_events: 3
+        starting_balance: Number(pnl?.starting_balance ?? 0),
+        ending_balance:   Number(pnl?.ending_balance   ?? config?.capital_cad ?? 0),
+        realized_pnl:     Number(pnl?.realized_pnl     ?? 0),
+        unrealized_pnl:   unrealizedTotal,
+        total_pnl:        Number(pnl?.realized_pnl     ?? 0) + unrealizedTotal,
+        daily_pnl:        Number(pnl?.total_pnl        ?? 0),
+        total_trades:     Number(pnl?.total_trades      ?? 0),
+        winning_trades:   Number(pnl?.winning_trades    ?? 0),
+        losing_trades:    Number(pnl?.losing_trades     ?? 0),
+        win_rate:         Number(pnl?.win_rate          ?? 0),
+        max_drawdown:     Number(pnl?.max_drawdown      ?? 0),
+        open_positions:   openPositions.length,
+        risk_events:      riskEventsCount,
+        portfolio_value:  Number(pnl?.ending_balance    ?? config?.capital_cad ?? 0),
+        mode:             config?.mode                  ?? 'paper',
+        is_active:        config?.is_active             ?? false,
       };
     } catch (error) {
-      console.error('Error fetching trading stats:', error);
-      return {};
+      console.error('getTradingStats error:', error instanceof Error ? error.message : String(error));
+      throw error;
     }
+  }
+
+  async storeDailyReport(userId: string): Promise<Record<string, unknown>> {
+    const stats = await this.getTradingStats(userId);
+    const today = new Date().toISOString().split('T')[0];
+    const todayStart = new Date(today + 'T00:00:00.000Z');
+    const tomorrowStart = new Date(todayStart);
+    tomorrowStart.setUTCDate(tomorrowStart.getUTCDate() + 1);
+
+    // Count incidents for today (bounded to UTC day)
+    const { count: incidentsCount } = await this.supabase
+      .from('agent_incidents')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .gte('detected_at', todayStart.toISOString())
+      .lt('detected_at', tomorrowStart.toISOString());
+
+    const report = {
+      user_id:              userId,
+      date:                 today,
+      starting_balance:     stats.starting_balance     ?? 0,
+      ending_balance:       stats.ending_balance       ?? 0,
+      realized_pnl:         stats.realized_pnl         ?? 0,
+      unrealized_pnl:       stats.unrealized_pnl       ?? 0,
+      total_pnl:            stats.total_pnl            ?? 0,
+      total_trades:         stats.total_trades         ?? 0,
+      winning_trades:       stats.winning_trades       ?? 0,
+      losing_trades:        stats.losing_trades        ?? 0,
+      win_rate:             stats.win_rate             ?? 0,  // stored as 0-100 (e.g. 75.5 = 75.5%)
+      max_drawdown:         stats.max_drawdown         ?? 0,
+      open_positions_count: stats.open_positions       ?? 0,
+      risk_events_count:    stats.risk_events          ?? 0,
+      incidents_count:      incidentsCount             ?? 0,
+      current_mode:         (['paper', 'live'] as const).includes(stats.mode) ? stats.mode : 'paper',
+      bot_active_state:     stats.is_active            ?? false,
+      generated_at:         new Date().toISOString(),
+    };
+
+    const { data, error } = await this.supabase
+      .from('daily_reports')
+      .upsert(report, { onConflict: 'user_id,date' })
+      .select('id')
+      .single();
+
+    if (error) {
+      console.error('storeDailyReport upsert error:', error.message);
+      throw new Error(`Failed to store daily report: ${error.message}`);
+    }
+
+    if (!data) {
+      throw new Error('storeDailyReport: upsert returned no data');
+    }
+
+    return { id: (data as { id: string }).id, ...report };
   }
 
   // Log notification event
@@ -412,6 +581,51 @@ serve(async (req) => {
         });
       }
 
+      case 'send_incident_alert': {
+        if (!request.incident) {
+          throw new Error('Missing incident payload for send_incident_alert');
+        }
+        const inc = request.incident;
+
+        const userSettings = await engine.getSecureNotificationSettings(request.user_id);
+        if (!userSettings.success) {
+          throw new Error('Failed to retrieve user notification settings');
+        }
+
+        const sent: string[] = [];
+
+        if (userSettings.settings?.telegram_enabled && userSettings.telegram_chat_id) {
+          const msg = engine.generateIncidentTelegramAlert(inc);
+          await engine.sendTelegramMessage(msg, userSettings.telegram_chat_id);
+          sent.push('telegram');
+        }
+
+        if (userSettings.settings?.email_enabled && userSettings.email) {
+          const subject = `[${inc.severity.toUpperCase()}] ${inc.title}`;
+          const html = engine.generateIncidentEmailHTML(inc);
+          await engine.sendEmail(userSettings.email, subject, html);
+          sent.push('email');
+        }
+
+        await engine.logNotification(request.user_id, 'incident_alert', 'sent', {
+          severity: inc.severity,
+          incident_type: inc.incident_type,
+          sent_via: sent,
+        });
+
+        return new Response(JSON.stringify({ success: true, sent_via: sent }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      case 'store_daily_report': {
+        const stored = await engine.storeDailyReport(request.user_id);
+        await engine.logNotification(request.user_id, 'daily_report_stored', 'stored', { report_id: stored.id });
+        return new Response(JSON.stringify({ success: true, report: stored }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
       default:
         throw new Error(`Unknown action: ${request.action}`);
     }
@@ -420,7 +634,7 @@ serve(async (req) => {
     console.error('Notification Engine Error:', error);
     return new Response(JSON.stringify({
       success: false,
-      error: error.message
+      error: error instanceof Error ? error.message : String(error)
     }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
