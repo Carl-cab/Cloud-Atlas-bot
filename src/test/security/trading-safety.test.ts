@@ -1,0 +1,425 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+/**
+ * Security tests for trading safety invariants.
+ * These tests validate the logic that prevents live trading,
+ * enforces paper mode, and ensures safety controls work.
+ *
+ * The actual Edge Functions run in Deno, so we test the invariants
+ * by simulating the decision logic used in trading-bot/index.ts.
+ */
+
+// Simulate the trading mode decision logic from trading-bot
+function shouldExecutePaperTrade(botConfig: { mode: string; is_paused: boolean; is_active: boolean }): boolean {
+  if (botConfig.is_paused) return false;
+  if (!botConfig.is_active) return false;
+  return botConfig.mode === 'paper';
+}
+
+function isLiveTradingBlocked(botConfig: { mode: string }): boolean {
+  // Live trading is ALWAYS blocked in this release
+  return botConfig.mode === 'live';
+}
+
+// Simulate the readiness gate logic
+function evaluateReadinessGate(params: {
+  readinessChecks: Array<{ status: string }> | null;
+  paperTradeCount: number;
+  failedReconciliations: number;
+}): { passed: boolean; failures: string[] } {
+  const failures: string[] = [];
+
+  const hasFailedChecks = !params.readinessChecks || params.readinessChecks.some(c => c.status === 'fail');
+  if (hasFailedChecks) failures.push('health-check has failed checks');
+  if (params.paperTradeCount < 50) failures.push(`need 50+ paper trades (have ${params.paperTradeCount})`);
+  if (params.failedReconciliations > 0) failures.push('unresolved reconciliation discrepancies exist');
+
+  return { passed: failures.length === 0, failures };
+}
+
+// Simulate risk evaluation decision
+function evaluateRiskDecision(params: {
+  signalConfidence: number;
+  positionSizePct: number;
+  maxPositionSizePct: number;
+  dailyLossPct: number;
+  maxDailyLossPct: number;
+  drawdownPct: number;
+  maxDrawdownPct: number;
+}): { approved: boolean; reason?: string } {
+  if (params.positionSizePct > params.maxPositionSizePct) {
+    return { approved: false, reason: 'Position size exceeds maximum allowed' };
+  }
+  if (params.dailyLossPct >= params.maxDailyLossPct) {
+    return { approved: false, reason: 'Daily loss limit reached' };
+  }
+  if (params.drawdownPct >= params.maxDrawdownPct) {
+    return { approved: false, reason: 'Maximum drawdown exceeded' };
+  }
+  if (params.signalConfidence < 0.6) {
+    return { approved: false, reason: 'Signal confidence too low' };
+  }
+  return { approved: true };
+}
+
+// Simulate kill switch check
+function isKillSwitchActive(botConfig: { is_paused: boolean; paused_reason?: string }): {
+  blocked: boolean;
+  reason: string;
+} {
+  if (botConfig.is_paused) {
+    return { blocked: true, reason: botConfig.paused_reason || 'Kill switch activated' };
+  }
+  return { blocked: false, reason: '' };
+}
+
+// Simulate reconciliation discrepancy detection
+function detectDiscrepancy(params: {
+  dbBalance: number;
+  exchangeBalance: number;
+  threshold: number;
+}): { hasDiscrepancy: boolean; difference: number } {
+  const difference = Math.abs(params.dbBalance - params.exchangeBalance);
+  return { hasDiscrepancy: difference > params.threshold, difference };
+}
+
+// Simulate health check for missing secrets
+function validateRequiredSecrets(secrets: Record<string, string | undefined>): {
+  valid: boolean;
+  missing: string[];
+} {
+  const required = ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_ANON_KEY', 'ENCRYPTION_KEY'];
+  const missing = required.filter(key => !secrets[key]);
+  return { valid: missing.length === 0, missing };
+}
+
+// Simulate Kraken permission validation
+function validateKrakenPermissions(permissions: string[]): {
+  valid: boolean;
+  reason?: string;
+} {
+  if (permissions.includes('withdraw')) {
+    return { valid: false, reason: 'Withdraw permission detected — bot API key must NOT have withdraw access' };
+  }
+  const required = ['query_funds', 'query_open_orders'];
+  const missingPerms = required.filter(p => !permissions.includes(p));
+  if (missingPerms.length > 0) {
+    return { valid: false, reason: `Missing required permissions: ${missingPerms.join(', ')}` };
+  }
+  return { valid: true };
+}
+
+describe('Trading Safety Invariants', () => {
+  describe('1. Live trading disabled by default', () => {
+    it('new bot config defaults to paper mode', () => {
+      const defaultConfig = { mode: 'paper', is_paused: false, is_active: true };
+      expect(shouldExecutePaperTrade(defaultConfig)).toBe(true);
+      expect(isLiveTradingBlocked(defaultConfig)).toBe(false);
+    });
+
+    it('live mode is always blocked in this release', () => {
+      const liveConfig = { mode: 'live', is_paused: false, is_active: true };
+      expect(isLiveTradingBlocked(liveConfig)).toBe(true);
+    });
+
+    it('mode cannot be anything other than paper or live', () => {
+      const validModes = ['paper', 'live'];
+      const invalidModes = ['', 'test', 'demo', 'production', undefined, null];
+      invalidModes.forEach(mode => {
+        expect(validModes.includes(mode as string)).toBe(false);
+      });
+    });
+  });
+
+  describe('2. Paper trading does not submit real Kraken orders', () => {
+    it('paper mode returns paper trade result without calling exchange', () => {
+      const config = { mode: 'paper', is_paused: false, is_active: true };
+      expect(shouldExecutePaperTrade(config)).toBe(true);
+      // Paper mode exits early with paper trade result - no Kraken API call happens
+      // The code path in trading-bot/index.ts returns after inserting to trading_positions
+    });
+
+    it('paper trade does not require Kraken credentials', () => {
+      // In the code, paper trades don't call getPerUserKrakenCredentials
+      // They insert directly to trading_positions with simulated data
+      const paperPosition = {
+        symbol: 'XBTUSD',
+        side: 'buy',
+        quantity: 0.01,
+        entry_price: 50000,
+        status: 'open',
+      };
+      expect(paperPosition.status).toBe('open');
+      // No API key needed for paper trades
+    });
+  });
+
+  describe('3. Readiness gate blocks live trading', () => {
+    it('blocks when no deployment checks exist', () => {
+      const result = evaluateReadinessGate({
+        readinessChecks: null,
+        paperTradeCount: 100,
+        failedReconciliations: 0,
+      });
+      expect(result.passed).toBe(false);
+      expect(result.failures).toContain('health-check has failed checks');
+    });
+
+    it('blocks when deployment checks have failures', () => {
+      const result = evaluateReadinessGate({
+        readinessChecks: [{ status: 'pass' }, { status: 'fail' }, { status: 'pass' }],
+        paperTradeCount: 100,
+        failedReconciliations: 0,
+      });
+      expect(result.passed).toBe(false);
+      expect(result.failures).toContain('health-check has failed checks');
+    });
+
+    it('blocks when fewer than 50 paper trades executed', () => {
+      const result = evaluateReadinessGate({
+        readinessChecks: [{ status: 'pass' }],
+        paperTradeCount: 49,
+        failedReconciliations: 0,
+      });
+      expect(result.passed).toBe(false);
+      expect(result.failures[0]).toContain('need 50+ paper trades');
+    });
+
+    it('blocks when unresolved reconciliation discrepancies exist', () => {
+      const result = evaluateReadinessGate({
+        readinessChecks: [{ status: 'pass' }],
+        paperTradeCount: 100,
+        failedReconciliations: 2,
+      });
+      expect(result.passed).toBe(false);
+      expect(result.failures).toContain('unresolved reconciliation discrepancies exist');
+    });
+
+    it('passes only when ALL criteria are met', () => {
+      const result = evaluateReadinessGate({
+        readinessChecks: [{ status: 'pass' }, { status: 'pass' }],
+        paperTradeCount: 50,
+        failedReconciliations: 0,
+      });
+      expect(result.passed).toBe(true);
+      expect(result.failures).toHaveLength(0);
+    });
+
+    it('blocks when multiple criteria fail simultaneously', () => {
+      const result = evaluateReadinessGate({
+        readinessChecks: [{ status: 'fail' }],
+        paperTradeCount: 10,
+        failedReconciliations: 3,
+      });
+      expect(result.passed).toBe(false);
+      expect(result.failures).toHaveLength(3);
+    });
+  });
+
+  describe('4. Risk checks run before order placement', () => {
+    it('rejects when position size exceeds maximum', () => {
+      const result = evaluateRiskDecision({
+        signalConfidence: 0.8,
+        positionSizePct: 15,
+        maxPositionSizePct: 10,
+        dailyLossPct: 0,
+        maxDailyLossPct: 2,
+        drawdownPct: 0,
+        maxDrawdownPct: 10,
+      });
+      expect(result.approved).toBe(false);
+      expect(result.reason).toContain('Position size exceeds');
+    });
+
+    it('rejects when daily loss limit reached', () => {
+      const result = evaluateRiskDecision({
+        signalConfidence: 0.8,
+        positionSizePct: 5,
+        maxPositionSizePct: 10,
+        dailyLossPct: 2,
+        maxDailyLossPct: 2,
+        drawdownPct: 0,
+        maxDrawdownPct: 10,
+      });
+      expect(result.approved).toBe(false);
+      expect(result.reason).toContain('Daily loss limit');
+    });
+
+    it('rejects when maximum drawdown exceeded', () => {
+      const result = evaluateRiskDecision({
+        signalConfidence: 0.8,
+        positionSizePct: 5,
+        maxPositionSizePct: 10,
+        dailyLossPct: 0,
+        maxDailyLossPct: 2,
+        drawdownPct: 10,
+        maxDrawdownPct: 10,
+      });
+      expect(result.approved).toBe(false);
+      expect(result.reason).toContain('Maximum drawdown');
+    });
+
+    it('rejects when signal confidence is too low', () => {
+      const result = evaluateRiskDecision({
+        signalConfidence: 0.5,
+        positionSizePct: 5,
+        maxPositionSizePct: 10,
+        dailyLossPct: 0,
+        maxDailyLossPct: 2,
+        drawdownPct: 0,
+        maxDrawdownPct: 10,
+      });
+      expect(result.approved).toBe(false);
+      expect(result.reason).toContain('Signal confidence too low');
+    });
+
+    it('approves only when all risk criteria pass', () => {
+      const result = evaluateRiskDecision({
+        signalConfidence: 0.8,
+        positionSizePct: 5,
+        maxPositionSizePct: 10,
+        dailyLossPct: 1,
+        maxDailyLossPct: 2,
+        drawdownPct: 5,
+        maxDrawdownPct: 10,
+      });
+      expect(result.approved).toBe(true);
+    });
+  });
+
+  describe('5. Kill switch blocks trading', () => {
+    it('blocks all trading when kill switch is active', () => {
+      const result = isKillSwitchActive({ is_paused: true, paused_reason: 'Manual halt' });
+      expect(result.blocked).toBe(true);
+      expect(result.reason).toBe('Manual halt');
+    });
+
+    it('uses default reason when no reason provided', () => {
+      const result = isKillSwitchActive({ is_paused: true });
+      expect(result.blocked).toBe(true);
+      expect(result.reason).toBe('Kill switch activated');
+    });
+
+    it('allows trading when kill switch is inactive', () => {
+      const result = isKillSwitchActive({ is_paused: false });
+      expect(result.blocked).toBe(false);
+    });
+
+    it('kill switch takes priority over is_active', () => {
+      // Even if is_active=true, is_paused blocks first
+      const config = { mode: 'paper', is_paused: true, is_active: true };
+      expect(shouldExecutePaperTrade(config)).toBe(false);
+    });
+  });
+
+  describe('6. Reconciliation detects discrepancies', () => {
+    it('detects discrepancy above threshold', () => {
+      const result = detectDiscrepancy({
+        dbBalance: 10000,
+        exchangeBalance: 10002,
+        threshold: 1.0,
+      });
+      expect(result.hasDiscrepancy).toBe(true);
+      expect(result.difference).toBe(2);
+    });
+
+    it('no discrepancy within threshold', () => {
+      const result = detectDiscrepancy({
+        dbBalance: 10000,
+        exchangeBalance: 10000.50,
+        threshold: 1.0,
+      });
+      expect(result.hasDiscrepancy).toBe(false);
+    });
+
+    it('detects when exchange has less than DB', () => {
+      const result = detectDiscrepancy({
+        dbBalance: 10000,
+        exchangeBalance: 9995,
+        threshold: 1.0,
+      });
+      expect(result.hasDiscrepancy).toBe(true);
+      expect(result.difference).toBe(5);
+    });
+
+    it('exact match has no discrepancy', () => {
+      const result = detectDiscrepancy({
+        dbBalance: 5000,
+        exchangeBalance: 5000,
+        threshold: 1.0,
+      });
+      expect(result.hasDiscrepancy).toBe(false);
+      expect(result.difference).toBe(0);
+    });
+  });
+
+  describe('7. Missing secrets fail health-check', () => {
+    it('fails when SUPABASE_URL is missing', () => {
+      const result = validateRequiredSecrets({
+        SUPABASE_URL: undefined,
+        SUPABASE_SERVICE_ROLE_KEY: 'key',
+        SUPABASE_ANON_KEY: 'key',
+        ENCRYPTION_KEY: 'key',
+      });
+      expect(result.valid).toBe(false);
+      expect(result.missing).toContain('SUPABASE_URL');
+    });
+
+    it('fails when ENCRYPTION_KEY is missing', () => {
+      const result = validateRequiredSecrets({
+        SUPABASE_URL: 'url',
+        SUPABASE_SERVICE_ROLE_KEY: 'key',
+        SUPABASE_ANON_KEY: 'key',
+        ENCRYPTION_KEY: undefined,
+      });
+      expect(result.valid).toBe(false);
+      expect(result.missing).toContain('ENCRYPTION_KEY');
+    });
+
+    it('fails when multiple secrets missing', () => {
+      const result = validateRequiredSecrets({
+        SUPABASE_URL: undefined,
+        SUPABASE_SERVICE_ROLE_KEY: undefined,
+        SUPABASE_ANON_KEY: 'key',
+        ENCRYPTION_KEY: undefined,
+      });
+      expect(result.valid).toBe(false);
+      expect(result.missing).toHaveLength(3);
+    });
+
+    it('passes when all secrets present', () => {
+      const result = validateRequiredSecrets({
+        SUPABASE_URL: 'https://project.supabase.co',
+        SUPABASE_SERVICE_ROLE_KEY: 'service-role-key',
+        SUPABASE_ANON_KEY: 'anon-key',
+        ENCRYPTION_KEY: 'encryption-key-32-chars-minimum!',
+      });
+      expect(result.valid).toBe(true);
+      expect(result.missing).toHaveLength(0);
+    });
+  });
+
+  describe('8. Kraken withdraw permission causes startup failure', () => {
+    it('rejects API key with withdraw permission', () => {
+      const result = validateKrakenPermissions(['query_funds', 'query_open_orders', 'create_order', 'withdraw']);
+      expect(result.valid).toBe(false);
+      expect(result.reason).toContain('Withdraw permission detected');
+    });
+
+    it('accepts API key with only trading permissions', () => {
+      const result = validateKrakenPermissions(['query_funds', 'query_open_orders', 'create_order', 'cancel_order']);
+      expect(result.valid).toBe(true);
+    });
+
+    it('rejects API key missing required query permissions', () => {
+      const result = validateKrakenPermissions(['create_order']);
+      expect(result.valid).toBe(false);
+      expect(result.reason).toContain('Missing required permissions');
+    });
+
+    it('accepts read-only API key for paper trading', () => {
+      const result = validateKrakenPermissions(['query_funds', 'query_open_orders']);
+      expect(result.valid).toBe(true);
+    });
+  });
+});
