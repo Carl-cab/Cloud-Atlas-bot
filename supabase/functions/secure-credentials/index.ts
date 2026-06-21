@@ -85,89 +85,49 @@ class SecureCredentialManager {
     return btoa(String.fromCharCode(...combined));
   }
 
-  // Enhanced decryption with AAD verification and legacy fallback
+  // PHASE 1 FIX: Secure decryption — v2 AES-GCM with HKDF and AAD only.
+  // Legacy fallback methods (method 1: no AAD; method 2: raw key without HKDF)
+  // have been REMOVED. They allowed an attacker who could manipulate the stored
+  // ciphertext to bypass AAD authentication. If v2 decryption fails, the user
+  // must re-enter their API credentials rather than falling back to a weaker cipher.
   private async decrypt(encryptedData: string, userId: string, exchange: string): Promise<string> {
     if (!encryptedData || encryptedData === '') return '';
-    
-    // Try new encryption method first (v2 with HKDF and AAD)
+
     try {
       const key = await this.deriveKey(`${userId}:${exchange}`);
       const aad = new TextEncoder().encode(`${userId}:${exchange}:v2`);
-      
+
       const combined = new Uint8Array(atob(encryptedData).split('').map(c => c.charCodeAt(0)));
       const iv = combined.slice(0, 12);
       const encrypted = combined.slice(12);
-      
+
       const decrypted = await crypto.subtle.decrypt(
         { name: 'AES-GCM', iv, additionalData: aad },
         key,
         encrypted
       );
-      
+
       return new TextDecoder().decode(decrypted);
-    } catch (v2Error) {
-      console.log('V2 decryption failed, trying legacy methods:', v2Error.message);
-      
-      // Try legacy method 1: Basic AES-GCM without AAD
-      try {
-        const key = await this.deriveKey(`${userId}:${exchange}`);
-        
-        const combined = new Uint8Array(atob(encryptedData).split('').map(c => c.charCodeAt(0)));
-        const iv = combined.slice(0, 12);
-        const encrypted = combined.slice(12);
-        
-        const decrypted = await crypto.subtle.decrypt(
-          { name: 'AES-GCM', iv },
-          key,
-          encrypted
-        );
-        
-        const result = new TextDecoder().decode(decrypted);
-        console.log('Successfully decrypted using legacy method 1');
-        return result;
-      } catch (legacyError1) {
-        console.log('Legacy method 1 failed:', legacyError1.message);
-        
-        // Try legacy method 2: Direct encryption key without HKDF
-        try {
-          const directKey = await crypto.subtle.importKey(
-            'raw',
-            new TextEncoder().encode(ENCRYPTION_KEY),
-            { name: 'AES-GCM' },
-            false,
-            ['decrypt']
-          );
-          
-          const combined = new Uint8Array(atob(encryptedData).split('').map(c => c.charCodeAt(0)));
-          const iv = combined.slice(0, 12);
-          const encrypted = combined.slice(12);
-          
-          const decrypted = await crypto.subtle.decrypt(
-            { name: 'AES-GCM', iv },
-            directKey,
-            encrypted
-          );
-          
-          const result = new TextDecoder().decode(decrypted);
-          console.log('Successfully decrypted using legacy method 2');
-          return result;
-        } catch (legacyError2) {
-          console.log('All decryption methods failed');
-          console.error('Final decryption error:', legacyError2);
-          
-          // Log security event for failed decryption attempts
-          await this.supabase
-            .from('security_audit_log')
-            .insert({
-              user_id: userId,
-              action: 'DECRYPTION_FAILURE',
-              resource: 'api_keys',
-              success: false,
-              metadata: { exchange, error: 'All decryption methods failed', attempts: 3 }
-            });
-          return '';
-        }
-      }
+    } catch (decryptError) {
+      // Log the failure for security monitoring
+      console.error('V2 decryption failed for user:', userId, 'exchange:', exchange);
+      await this.supabase
+        .from('security_audit_log')
+        .insert({
+          user_id: userId,
+          action: 'DECRYPTION_FAILURE',
+          resource: 'api_keys',
+          success: false,
+          metadata: {
+            exchange,
+            error: 'AES-GCM v2 decryption failed — credentials must be re-entered',
+            // SECURITY: Do not log decryptError.message as it may contain key material
+          }
+        });
+      // Hard failure: do NOT fall back to weaker methods.
+      // Returning empty string causes getCredentials() to return an error,
+      // prompting the user to re-enter their API keys.
+      return '';
     }
   }
 
