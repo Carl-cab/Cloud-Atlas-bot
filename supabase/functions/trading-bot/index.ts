@@ -13,11 +13,34 @@ const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-// Kraken API configuration
-const KRAKEN_API_KEY = Deno.env.get('KRAKEN_API_KEY')!;
-const KRAKEN_PRIVATE_KEY = Deno.env.get('KRAKEN_PRIVATE_KEY')!;
+// PHASE 0 FIX: Global Kraken keys removed. Per-user keys are fetched at runtime.
+// Only notification keys remain as global config (not exchange credentials).
 const TELEGRAM_BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN')!;
 const TELEGRAM_CHAT_ID = Deno.env.get('TELEGRAM_CHAT_ID')!;
+const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+
+/**
+ * PHASE 0 FIX: Fetch per-user Kraken credentials from the secure-credentials edge function.
+ * Never uses global API keys. Throws if credentials are not found.
+ */
+async function getPerUserKrakenCredentials(userId: string, userToken: string): Promise<{ apiKey: string; privateKey: string }> {
+  const response = await fetch(`${supabaseUrl}/functions/v1/secure-credentials`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${userToken}`,
+    },
+    body: JSON.stringify({ action: 'retrieve', exchange: 'kraken' }),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to retrieve Kraken credentials: HTTP ${response.status}`);
+  }
+  const data = await response.json();
+  if (!data.success || !data.api_key || !data.api_secret) {
+    throw new Error('Kraken API credentials not found. Please configure your API keys in Settings.');
+  }
+  return { apiKey: data.api_key, privateKey: data.api_secret };
+}
 
 interface MarketRegime {
   regime: 'trend' | 'range' | 'high_volatility';
@@ -533,27 +556,49 @@ serve(async (req) => {
   }
 
   try {
-    // Authenticate the request
+    // --- PHASE 0 FIX: Strict JWT validation ---
     const authHeader = req.headers.get('authorization');
-    if (!authHeader) {
-      throw new Error('No authorization header');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return new Response(JSON.stringify({ error: 'Missing or malformed authorization header' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
     }
-
-    const supabaseAuth = createClient(supabaseUrl, Deno.env.get('SUPABASE_ANON_KEY')!);
     const token = authHeader.replace('Bearer ', '');
+    const supabaseAuth = createClient(supabaseUrl, supabaseAnonKey);
     const { data: { user }, error: authError } = await supabaseAuth.auth.getUser(token);
-    
     if (authError || !user) {
-      throw new Error('Invalid or expired token');
+      return new Response(JSON.stringify({ error: 'Invalid or expired token' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
     }
+    // --- END PHASE 0 FIX ---
 
     // Parse request body only once to avoid "Body already consumed" error
     const requestBody = await req.json();
-    const { action, symbol = 'XBTUSD', userId, strategy, config = {}, strategies = [], config: strategyConfig = {} } = requestBody;
-    
-    console.log(`Trading bot action: ${action}, symbol: ${symbol}, user: ${user.id}`);
-    
-    const krakenAPI = new KrakenAPI(KRAKEN_API_KEY, KRAKEN_PRIVATE_KEY);
+    const { action, symbol = 'XBTUSD', userId: requestedUserId, strategy, config = {}, strategies = [], config: strategyConfig = {} } = requestBody;
+
+    // PHASE 0 FIX: Reject any attempt to act on behalf of a different user
+    if (requestedUserId && requestedUserId !== user.id) {
+      return new Response(JSON.stringify({ error: 'Access denied: userId in payload does not match authenticated user' }), {
+        status: 403,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+    // Always use the authenticated user ID — never trust the request body
+    const userId = user.id;
+
+    console.log(`Trading bot action: ${action}, symbol: ${symbol}, user: ${userId}`);
+
+    // PHASE 0 FIX: Fetch per-user Kraken credentials at runtime (no global keys)
+    // Only fetch credentials for actions that require exchange access
+    let krakenAPI: KrakenAPI | null = null;
+    const exchangeActions = ['analyze_market', 'execute_trade'];
+    if (exchangeActions.includes(action)) {
+      const creds = await getPerUserKrakenCredentials(userId, token);
+      krakenAPI = new KrakenAPI(creds.apiKey, creds.privateKey);
+    }
     const mlEngine = new MLEngine();
     const regimeDetector = new RegimeDetector();
     const riskManager = new RiskManager();
@@ -562,6 +607,7 @@ serve(async (req) => {
     switch (action) {
       case 'analyze_market':
         // Fetch market data
+        if (!krakenAPI) throw new Error('Kraken API not initialized for this action');
         const ohlcData = await krakenAPI.getOHLCData(symbol);
         const marketData = ohlcData.result[Object.keys(ohlcData.result)[0]];
         
@@ -829,8 +875,9 @@ serve(async (req) => {
     }
 
   } catch (error) {
+    // SECURITY: Do not leak internal error details to the client
     console.error('Trading bot error:', error);
-    return new Response(JSON.stringify({ error: error.message }), {
+    return new Response(JSON.stringify({ error: 'Internal server error' }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });

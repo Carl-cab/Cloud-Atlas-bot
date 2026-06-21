@@ -12,6 +12,15 @@ dist
 dist-ssr
 *.local
 
+# PHASE 0 FIX: Environment and secret files — NEVER commit these
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.secret
+supabase/.env
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

@@ -288,8 +288,41 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  // --- PHASE 0 FIX: Enforce strict JWT validation on ALL actions ---
+  const authHeader = req.headers.get('authorization');
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return new Response(JSON.stringify({ success: false, error: 'Missing or malformed authorization header' }), {
+      status: 401,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+  }
+  const token = authHeader.replace('Bearer ', '');
+  const supabaseAuthClient = createClient(
+    Deno.env.get('SUPABASE_URL') ?? '',
+    Deno.env.get('SUPABASE_ANON_KEY') ?? ''
+  );
+  const { data: { user }, error: authError } = await supabaseAuthClient.auth.getUser(token);
+  if (authError || !user) {
+    return new Response(JSON.stringify({ success: false, error: 'Invalid or expired token' }), {
+      status: 401,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+  }
+  // --- END PHASE 0 FIX ---
+
   try {
     const request: NotificationRequest = await req.json();
+
+    // PHASE 0 FIX: Reject any attempt to act on behalf of a different user
+    if (request.user_id && request.user_id !== user.id) {
+      return new Response(JSON.stringify({ success: false, error: 'Access denied: user_id in payload does not match authenticated user' }), {
+        status: 403,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+    // Always use the authenticated user ID — never trust the request body
+    request.user_id = user.id;
+
     const engine = new NotificationEngine();
 
     switch (request.action) {
@@ -417,10 +450,11 @@ serve(async (req) => {
     }
 
   } catch (error) {
+    // SECURITY: Do not leak internal error details to the client
     console.error('Notification Engine Error:', error);
     return new Response(JSON.stringify({
       success: false,
-      error: error.message
+      error: 'Internal server error'
     }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }

@@ -9,6 +9,7 @@ const corsHeaders = {
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 interface AutonomousSettings {
@@ -396,15 +397,39 @@ serve(async (req) => {
   }
 
   try {
+    // --- PHASE 0 FIX: Strict JWT validation ---
     const authHeader = req.headers.get('authorization');
-    if (!authHeader) {
-      throw new Error('No authorization header');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return new Response(JSON.stringify({ error: 'Missing or malformed authorization header' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
     }
+    const token = authHeader.replace('Bearer ', '');
+    const supabaseAuth = createClient(supabaseUrl, supabaseAnonKey);
+    const { data: { user }, error: authError } = await supabaseAuth.auth.getUser(token);
+    if (authError || !user) {
+      return new Response(JSON.stringify({ error: 'Invalid or expired token' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+    // --- END PHASE 0 FIX ---
 
     const requestBody = await req.json();
-    const { action, user_id, settings, market_analysis, risk_assessment, decision } = requestBody;
+    const { action, user_id: requestedUserId, settings, market_analysis, risk_assessment, decision } = requestBody;
 
-    console.log(`Autonomous agent action: ${action} for user: ${user_id}`);
+    // Reject any attempt to act on behalf of a different user
+    if (requestedUserId && requestedUserId !== user.id) {
+      return new Response(JSON.stringify({ error: 'Access denied: user_id in payload does not match authenticated user' }), {
+        status: 403,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Always use the authenticated user ID — never trust the request body
+    const user_id = user.id;
+    console.log(`Autonomous agent action: ${action} for authenticated user: ${user_id}`);
 
     const agent = new AutonomousAgent(settings, user_id);
 

@@ -33,30 +33,31 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  // --- PHASE 0 FIX: Enforce JWT validation on ALL actions ---
+  const authHeader = req.headers.get('authorization');
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return new Response(JSON.stringify({ error: 'Missing or malformed authorization header' }), {
+      status: 401,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+  }
+  const token = authHeader.replace('Bearer ', '');
+  const supabaseAuthClient = createClient(
+    Deno.env.get('SUPABASE_URL') ?? '',
+    Deno.env.get('SUPABASE_ANON_KEY') ?? ''
+  );
+  const { data: { user }, error: authError } = await supabaseAuthClient.auth.getUser(token);
+  if (authError || !user) {
+    return new Response(JSON.stringify({ error: 'Invalid or expired token' }), {
+      status: 401,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+  }
+  // --- END PHASE 0 FIX ---
+
   try {
     const { action, symbol, exchange = 'kraken' } = await req.json();
-    console.log(`Market data engine: ${action} for ${symbol} on ${exchange}`);
-
-    // SECURITY: Some actions require authentication
-    let user = null;
-    if (['get_dashboard_metrics'].includes(action)) {
-      const authHeader = req.headers.get('authorization');
-      if (!authHeader) {
-        throw new Error('Authentication required for this action');
-      }
-
-      const supabaseAuth = createClient(
-        Deno.env.get('SUPABASE_URL') ?? '',
-        Deno.env.get('SUPABASE_ANON_KEY') ?? ''
-      );
-      const token = authHeader.replace('Bearer ', '');
-      const { data: { user: authUser }, error: authError } = await supabaseAuth.auth.getUser(token);
-      
-      if (authError || !authUser) {
-        throw new Error('Invalid or expired token');
-      }
-      user = authUser;
-    }
+    console.log(`Market data engine: ${action} for ${symbol} on ${exchange}, user: ${user.id}`);
 
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
@@ -83,9 +84,10 @@ serve(async (req) => {
         );
     }
   } catch (error) {
+    // SECURITY: Do not leak internal error details to the client
     console.error('Market data engine error:', error);
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ error: 'Internal server error' }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
     );
   }
