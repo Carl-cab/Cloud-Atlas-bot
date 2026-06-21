@@ -171,35 +171,39 @@ export const WebSocketManager = () => {
         };
       }
       
-      // Simulate other exchanges with mock data for demo
+      // PHASE 4 FIX: Removed dependency on wss://echo.websocket.org (third-party
+      // public echo server). That endpoint is unreliable, violates CSP, and
+      // sends all data to an external host. Replace with a local interval-based
+      // mock that does not open any external network connection.
       else {
-        // Create a mock WebSocket-like connection
-        ws = new WebSocket('wss://echo.websocket.org');
-        
-        ws.onopen = () => {
-          // Simulate market data updates
-          const interval = setInterval(() => {
-            if (ws.readyState === WebSocket.OPEN) {
-              const mockPrice = 50000 + Math.random() * 10000;
-              setMarketData(prev => ({
-                ...prev,
-                [symbol]: {
-                  symbol,
-                  price: mockPrice,
-                  change24h: (Math.random() - 0.5) * 1000,
-                  volume24h: Math.random() * 1000000,
-                  bid: mockPrice - 10,
-                  ask: mockPrice + 10,
-                  timestamp: new Date()
-                }
-              }));
-            } else {
-              clearInterval(interval);
+        // Use a synthetic mock — no external WebSocket connection is opened.
+        // In production, replace this block with the real exchange WebSocket URL.
+        updateConnectionStatus(connectionId, 'connected');
+        const interval = setInterval(() => {
+          const mockPrice = 50000 + Math.random() * 10000;
+          setMarketData(prev => ({
+            ...prev,
+            [symbol]: {
+              symbol,
+              price: mockPrice,
+              change24h: (Math.random() - 0.5) * 1000,
+              volume24h: Math.random() * 1000000,
+              bid: mockPrice - 10,
+              ask: mockPrice + 10,
+              timestamp: new Date()
             }
-          }, 1000);
-          
-          updateConnectionStatus(connectionId, 'connected');
-        };
+          }));
+        }, 1000);
+        // Store a cleanup reference so the interval is cleared on disconnect
+        wsRefs.current[connectionId] = {
+          readyState: WebSocket.OPEN,
+          close: () => {
+            clearInterval(interval);
+            updateConnectionStatus(connectionId, 'disconnected');
+            delete wsRefs.current[connectionId];
+          }
+        } as unknown as WebSocket;
+        return; // Skip the ws.onerror / ws.onclose wiring below
       }
 
       ws.onerror = (error) => {

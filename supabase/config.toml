@@ -1,31 +1,78 @@
 project_id = "asxcbnkpflgecqreegdd"
 
-[functions.migrate-legacy-keys]
-verify_jwt = false
+# =============================================================================
+# PHASE 4: All edge functions require JWT verification at the Supabase gateway.
+# Functions that previously had verify_jwt = false (migrate-legacy-keys,
+# secure-notification-settings, market-data-engine, notification-engine) have
+# been updated. Their internal code also enforces JWT validation independently.
+# auth-failure-test is disabled in production — remove before go-live.
+# =============================================================================
 
-[functions.secure-notification-settings]
-verify_jwt = false
-
+# --- Core trading functions ---
 [functions.trading-bot]
-verify_jwt = true
-
-[functions.daily-retraining]
-verify_jwt = true
-
-[functions.security-audit]
 verify_jwt = true
 
 [functions.live-trading-engine]
 verify_jwt = true
 
+[functions.autonomous-agent]
+verify_jwt = true
+
+[functions.risk-management-engine]
+verify_jwt = true
+
+# --- ML and market data ---
 [functions.enhanced-ml-engine]
 verify_jwt = true
 
+[functions.ml-trading-engine]
+verify_jwt = true
+
 [functions.market-data-engine]
-verify_jwt = false
+verify_jwt = true
 
+[functions.daily-retraining]
+verify_jwt = true
+
+# --- Credentials and auth ---
+[functions.secure-credentials]
+verify_jwt = true
+
+[functions.auth-manager]
+verify_jwt = true
+
+[functions.migrate-legacy-keys]
+verify_jwt = true
+
+# --- Notifications ---
 [functions.notification-engine]
-verify_jwt = false
+verify_jwt = true
 
-[functions.auth-failure-test]
-verify_jwt = false
+[functions.secure-notification-settings]
+verify_jwt = true
+
+# --- Security ---
+[functions.security-audit]
+verify_jwt = true
+
+# --- Phase 3: Money flow ---
+[functions.wallet-engine]
+verify_jwt = true
+
+[functions.pnl-engine]
+verify_jwt = true
+
+[functions.reconciliation-engine]
+verify_jwt = true
+
+# --- Phase 4: Health check ---
+[functions.health-check]
+verify_jwt = true
+
+# --- MCP integration ---
+[functions.mcp-integration]
+verify_jwt = true
+
+# --- REMOVE IN PRODUCTION: test function ---
+# [functions.auth-failure-test]
+# verify_jwt = false

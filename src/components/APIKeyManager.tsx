@@ -138,7 +138,7 @@ export const APIKeyManager = () => {
 
       await loadAPIKeys();
       setShowAddDialog(false);
-      setNewKey({ exchange: '', api_key: '', api_secret: '', passphrase: '' });
+      // Key material cleared in finally block below
       
       toast({
         title: "API Key Added",
@@ -146,7 +146,8 @@ export const APIKeyManager = () => {
       });
 
     } catch (error) {
-      console.error('Error adding API key:', error);
+      // PHASE 4 FIX: Do not log error.message — it may contain key material.
+      console.error('Error adding API key');
       toast({
         title: "Error",
         description: "Failed to add API key. Please try again.",
@@ -154,6 +155,10 @@ export const APIKeyManager = () => {
       });
     } finally {
       setIsAdding(false);
+      // PHASE 4 FIX: Always zero out sensitive key material from component state
+      // on both success and failure paths. Prevents keys lingering in React
+      // DevTools memory snapshots if the dialog is left open after a failed call.
+      setNewKey(prev => ({ exchange: prev.exchange, api_key: '', api_secret: '', passphrase: '' }));
     }
   };
 
@@ -294,10 +299,11 @@ export const APIKeyManager = () => {
       }
 
     } catch (error) {
-      console.error('Connection test failed:', error);
+      // PHASE 4 FIX: Do not surface error.message to UI — may contain API details.
+      console.error('Connection test failed');
       toast({
         title: "Connection Failed",
-        description: error.message || "Failed to connect to Kraken API. Please check your credentials.",
+        description: "Failed to connect to Kraken API. Please check your credentials.",
         variant: "destructive"
       });
     }

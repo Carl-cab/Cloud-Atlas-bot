@@ -3,19 +3,47 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>steady-equity-bot</title>
-    <meta name="description" content="Lovable Generated Project" />
-    <meta name="author" content="Lovable" />
+    <title>Cloud Atlas Bot</title>
+    <meta name="description" content="Cloud Atlas Bot — Automated Crypto Trading Platform" />
+    <meta name="author" content="Cloud Atlas" />
 
-    <meta property="og:title" content="steady-equity-bot" />
-    <meta property="og:description" content="Lovable Generated Project" />
+    <meta property="og:title" content="Cloud Atlas Bot" />
+    <meta property="og:description" content="Cloud Atlas Bot — Automated Crypto Trading Platform" />
     <meta property="og:type" content="website" />
-    <meta property="og:image" content="https://lovable.dev/opengraph-image-p98pqg.png" />
 
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:site" content="@lovable_dev" />
-    <meta name="twitter:image" content="https://lovable.dev/opengraph-image-p98pqg.png" />
-    
+    <!-- PHASE 4: Content Security Policy
+         Restricts resource loading to trusted origins only.
+         echo.websocket.org and all other third-party WebSocket endpoints are
+         explicitly excluded. Only wss://ws.kraken.com is permitted.
+         Update the supabase.co subdomain to match your project before deploying. -->
+    <meta http-equiv="Content-Security-Policy" content="
+      default-src 'self';
+      script-src 'self' 'unsafe-inline';
+      style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+      font-src 'self' https://fonts.gstatic.com;
+      img-src 'self' data: https:;
+      connect-src 'self'
+        https://*.supabase.co
+        https://*.supabase.in
+        wss://*.supabase.co
+        https://api.kraken.com
+        wss://ws.kraken.com
+        https://fonts.googleapis.com
+        https://fonts.gstatic.com;
+      frame-ancestors 'none';
+      base-uri 'self';
+      form-action 'self';
+    " />
+
+    <!-- PHASE 4: Prevent clickjacking -->
+    <meta http-equiv="X-Frame-Options" content="DENY" />
+
+    <!-- PHASE 4: Prevent MIME-type sniffing -->
+    <meta http-equiv="X-Content-Type-Options" content="nosniff" />
+
+    <!-- PHASE 4: Referrer policy — do not leak URL to third parties -->
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
