@@ -34,6 +34,128 @@ const corsHeaders = {
 const MIN_WITHDRAWAL_USD = 10.00;
 // Maximum single deposit amount (anti-money-laundering safeguard)
 const MAX_SINGLE_DEPOSIT_USD = 50000.00;
+// Tolerance for deposit amount verification (±0.5% to account for exchange fees)
+const DEPOSIT_AMOUNT_TOLERANCE_PCT = 0.005;
+
+// ---------------------------------------------------------------------------
+// Kraken API helpers (for deposit verification)
+// ---------------------------------------------------------------------------
+async function generateKrakenSignature(
+  path: string,
+  nonce: string,
+  postData: string,
+  secret: string
+): Promise<string> {
+  const encoder = new TextEncoder();
+  const message = nonce + postData;
+  const messageHash = await crypto.subtle.digest('SHA-256', encoder.encode(message));
+  const secretBytes = new Uint8Array(
+    atob(secret).split('').map(c => c.charCodeAt(0))
+  );
+  const key = await crypto.subtle.importKey(
+    'raw', secretBytes, { name: 'HMAC', hash: 'SHA-512' }, false, ['sign']
+  );
+  const pathBytes = encoder.encode(path);
+  const combined = new Uint8Array(pathBytes.length + messageHash.byteLength);
+  combined.set(pathBytes);
+  combined.set(new Uint8Array(messageHash), pathBytes.length);
+  const sig = await crypto.subtle.sign('HMAC', key, combined);
+  return btoa(String.fromCharCode(...new Uint8Array(sig)));
+}
+
+async function krakenPrivateRequest(
+  endpoint: string,
+  params: Record<string, string>,
+  apiKey: string,
+  privateKey: string
+): Promise<any> {
+  const nonce = Date.now().toString();
+  const postData = `nonce=${nonce}&` + new URLSearchParams(params).toString();
+  const path = `/0/private/${endpoint}`;
+  const signature = await generateKrakenSignature(path, nonce, postData, privateKey);
+  const resp = await fetch(`https://api.kraken.com${path}`, {
+    method: 'POST',
+    headers: {
+      'API-Key': apiKey,
+      'API-Sign': signature,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: postData,
+  });
+  if (!resp.ok) throw new Error(`Kraken API HTTP ${resp.status}`);
+  return await resp.json();
+}
+
+/**
+ * Verify a deposit against Kraken's Ledgers endpoint.
+ *
+ * Strategy:
+ *   1. Call Kraken /0/private/Ledgers with type=deposit and start=(now - 24h).
+ *   2. Find a ledger entry whose refid matches the provided kraken_ref_id.
+ *   3. Confirm the amount is within DEPOSIT_AMOUNT_TOLERANCE_PCT of the declared amount.
+ *   4. Confirm the entry has not already been credited (idempotency check).
+ *
+ * Returns: { verified: boolean; kraken_amount?: number; kraken_refid?: string; error?: string }
+ */
+async function verifyKrakenDeposit(
+  userId: string,
+  declaredAmount: number,
+  krakenRefId: string,
+  apiKey: string,
+  privateKey: string
+): Promise<{ verified: boolean; kraken_amount?: number; kraken_refid?: string; error?: string }> {
+  try {
+    // Check idempotency: has this refid already been credited?
+    const { data: existingTx } = await supabaseAdmin
+      .from('transactions')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('reference_id', krakenRefId)
+      .eq('transaction_type', 'deposit')
+      .maybeSingle();
+
+    if (existingTx) {
+      return { verified: false, error: `Deposit refid ${krakenRefId} has already been credited` };
+    }
+
+    // Query Kraken Ledgers for the last 24 hours
+    const start = Math.floor((Date.now() - 86400000) / 1000).toString();
+    const ledgerResp = await krakenPrivateRequest(
+      'Ledgers',
+      { type: 'deposit', start },
+      apiKey,
+      privateKey
+    );
+
+    if (ledgerResp.error?.length > 0) {
+      return { verified: false, error: `Kraken API error: ${ledgerResp.error.join(', ')}` };
+    }
+
+    const ledgers: Record<string, any> = ledgerResp.result?.ledger ?? {};
+    const entry = Object.values(ledgers).find(
+      (e: any) => e.refid === krakenRefId && e.type === 'deposit'
+    ) as any;
+
+    if (!entry) {
+      return { verified: false, error: `Deposit refid ${krakenRefId} not found in Kraken ledger (may not have settled yet)` };
+    }
+
+    const krakenAmount = Math.abs(Number(entry.amount));
+    const tolerance = declaredAmount * DEPOSIT_AMOUNT_TOLERANCE_PCT;
+
+    if (Math.abs(krakenAmount - declaredAmount) > tolerance) {
+      return {
+        verified: false,
+        kraken_amount: krakenAmount,
+        error: `Amount mismatch: declared $${declaredAmount.toFixed(2)}, Kraken reports $${krakenAmount.toFixed(2)}`
+      };
+    }
+
+    return { verified: true, kraken_amount: krakenAmount, kraken_refid: entry.refid };
+  } catch (err) {
+    return { verified: false, error: `Verification failed: ${err.message}` };
+  }
+}
 
 // Service-role client — used for all balance mutations and audit logging
 const supabaseAdmin = createClient(
@@ -164,8 +286,19 @@ serve(async (req) => {
       // -----------------------------------------------------------------------
       case 'deposit': {
         // Deposits are initiated by the operator/webhook after Kraken confirms
-        // receipt of funds. The amount and reference are provided in the body.
-        const { amount, reference_id, description } = body;
+        // receipt of funds. The amount, reference, and kraken_ref_id are provided
+        // in the body. The system verifies the transaction against Kraken's Ledgers
+        // API before crediting the balance.
+        //
+        // Required fields:
+        //   amount         — declared deposit amount in USD
+        //   kraken_ref_id  — Kraken ledger refid (e.g., "LXXXXXXXXXXXXXXX")
+        //
+        // Optional fields:
+        //   reference_id   — internal reference (defaults to kraken_ref_id)
+        //   description    — human-readable note
+        //   skip_verify    — if true, skip Kraken verification (for paper trading / testing only)
+        const { amount, kraken_ref_id, reference_id, description, skip_verify = false } = body;
 
         if (!amount || typeof amount !== 'number' || amount <= 0) {
           return new Response(JSON.stringify({ error: 'Invalid deposit amount' }), {
@@ -177,22 +310,76 @@ serve(async (req) => {
             error: `Deposit exceeds maximum single deposit limit of $${MAX_SINGLE_DEPOSIT_USD}`
           }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
+        if (!kraken_ref_id && !skip_verify) {
+          return new Response(JSON.stringify({
+            error: 'kraken_ref_id is required for deposit verification. Pass skip_verify=true for paper trading.'
+          }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
 
+        // --- Verify deposit against Kraken Ledgers API ---
+        let verifiedAmount = amount;
+        if (!skip_verify && kraken_ref_id) {
+          // Fetch per-user Kraken credentials from secure-credentials
+          const credResp = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/secure-credentials`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ action: 'get', credential_type: 'kraken', user_id: userId }),
+          });
+          const credData = await credResp.json();
+
+          if (!credData.api_key || !credData.private_key) {
+            await auditLog(supabaseAdmin, {
+              userId,
+              action: 'DEPOSIT_VERIFICATION_FAILED',
+              category: AuditCategory.TRADING,
+              severity: AuditSeverity.WARNING,
+              details: { reason: 'No Kraken credentials found for user', kraken_ref_id }
+            });
+            return new Response(JSON.stringify({
+              error: 'Cannot verify deposit: no Kraken API credentials configured. Add your Kraken API key first.'
+            }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+          }
+
+          const verification = await verifyKrakenDeposit(
+            userId, amount, kraken_ref_id, credData.api_key, credData.private_key
+          );
+
+          if (!verification.verified) {
+            await auditLog(supabaseAdmin, {
+              userId,
+              action: 'DEPOSIT_VERIFICATION_FAILED',
+              category: AuditCategory.TRADING,
+              severity: AuditSeverity.WARNING,
+              details: { declared_amount: amount, kraken_ref_id, reason: verification.error }
+            });
+            return new Response(JSON.stringify({
+              error: `Deposit verification failed: ${verification.error}`
+            }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+          }
+
+          // Use the Kraken-verified amount (may differ slightly due to fees)
+          verifiedAmount = verification.kraken_amount ?? amount;
+        }
+
+        const effectiveRefId = reference_id ?? kraken_ref_id ?? `manual-${Date.now()}`;
         const wallet = await getOrCreateWallet(userId);
         const balanceBefore = Number(wallet.available_balance);
-        const balanceAfter  = balanceBefore + amount;
+        const balanceAfter  = balanceBefore + verifiedAmount;
 
         await recordTransaction(
           userId,
           wallet.id,
           'deposit',
-          amount,
-          { total_deposited: Number(wallet.total_deposited) + amount },
+          verifiedAmount,
+          { total_deposited: Number(wallet.total_deposited) + verifiedAmount },
           balanceBefore,
           balanceAfter,
-          reference_id,
+          effectiveRefId,
           'deposit',
-          description ?? `Deposit of $${amount.toFixed(2)} USD`
+          description ?? `Deposit of $${verifiedAmount.toFixed(2)} USD (ref: ${effectiveRefId})`
         );
 
         await auditLog(supabaseAdmin, {
@@ -200,13 +387,22 @@ serve(async (req) => {
           action: 'DEPOSIT',
           category: AuditCategory.TRADING,
           severity: AuditSeverity.INFO,
-          details: { amount, reference_id, balance_after: balanceAfter }
+          details: {
+            declared_amount: amount,
+            verified_amount: verifiedAmount,
+            kraken_ref_id,
+            reference_id: effectiveRefId,
+            skip_verify,
+            balance_after: balanceAfter
+          }
         });
 
         const updatedWallet = await getOrCreateWallet(userId);
         return new Response(JSON.stringify({
           success: true,
-          message: `Deposit of $${amount.toFixed(2)} recorded`,
+          message: `Deposit of $${verifiedAmount.toFixed(2)} verified and recorded`,
+          verified: !skip_verify,
+          kraken_ref_id,
           wallet: updatedWallet
         }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }

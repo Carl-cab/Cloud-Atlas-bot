@@ -341,19 +341,93 @@ class RegimeDetector {
 }
 
 class RiskManager {
-  // PHASE 2 FIX: Hard-coded absolute floor limits that can never be overridden
-  // by user configuration. These protect the system even if risk_settings are
-  // misconfigured or tampered with.
-  private readonly ABSOLUTE_MAX_RISK_PER_TRADE = 0.10;  // 10% of capital
-  private readonly ABSOLUTE_MAX_DAILY_LOSS     = 0.20;  // 20% of capital
-  private readonly ABSOLUTE_MAX_POSITIONS      = 10;
-  private readonly ABSOLUTE_MIN_STOP_LOSS_PCT  = 0.001; // 0.1% minimum
-  private readonly ABSOLUTE_MAX_TRADE_SIZE_USD = 10000; // $10,000 hard cap
+  // =========================================================================
+  // ABSOLUTE HARD LIMITS — cannot be overridden by user configuration.
+  // These protect the system even if risk_settings are misconfigured.
+  // =========================================================================
+  private readonly ABSOLUTE_MAX_RISK_PER_TRADE  = 0.10;  // 10% of capital per trade
+  private readonly ABSOLUTE_MAX_DAILY_LOSS      = 0.20;  // 20% of capital per day
+  private readonly ABSOLUTE_MAX_DRAWDOWN        = 0.30;  // 30% peak-to-trough drawdown
+  private readonly ABSOLUTE_MAX_POSITIONS       = 10;
+  private readonly ABSOLUTE_MIN_STOP_LOSS_PCT   = 0.001; // 0.1% minimum stop-loss
+  private readonly ABSOLUTE_MAX_TRADE_SIZE_USD  = 10000; // $10,000 hard cap per trade
+  // Default cooldown durations (in milliseconds)
+  private readonly COOLDOWN_DAILY_LOSS_MS       = 24 * 60 * 60 * 1000; // 24 hours
+  private readonly COOLDOWN_CIRCUIT_BREAKER_MS  = 60 * 60 * 1000;      // 1 hour
+  private readonly COOLDOWN_MAX_DRAWDOWN_MS     = 48 * 60 * 60 * 1000; // 48 hours
 
-  // PHASE 2 FIX: evaluateRisk now requires user_id so all DB queries are
-  // scoped to the authenticated user. Previously, daily_pnl and
-  // trading_positions were queried without a user_id filter, meaning the
-  // RiskManager was aggregating data across ALL users.
+  // -------------------------------------------------------------------------
+  // Pause the bot with a reason and schedule automatic cooldown resumption.
+  // Writes a risk_cooldowns row so the scheduler can re-enable trading.
+  // -------------------------------------------------------------------------
+  private async engageCooldown(
+    userId: string,
+    reason: string,
+    cooldownMs: number,
+    details: Record<string, unknown>
+  ): Promise<void> {
+    const resumeAt = new Date(Date.now() + cooldownMs).toISOString();
+
+    // 1. Pause the bot
+    await supabase
+      .from('bot_config')
+      .update({ is_paused: true, paused_reason: reason })
+      .eq('user_id', userId);
+
+    // 2. Record the cooldown so the scheduler can auto-resume
+    await supabase
+      .from('risk_cooldowns')
+      .upsert({
+        user_id:    userId,
+        reason,
+        engaged_at: new Date().toISOString(),
+        resume_at:  resumeAt,
+        details,
+        resolved:   false,
+      }, { onConflict: 'user_id,reason' });
+
+    // 3. Notify the operator via Telegram (best-effort, never throws)
+    try {
+      const telegramToken = Deno.env.get('TELEGRAM_BOT_TOKEN');
+      const { data: notifSettings } = await supabase
+        .from('notification_settings')
+        .select('telegram_chat_id, telegram_enabled')
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (telegramToken && notifSettings?.telegram_enabled && notifSettings?.telegram_chat_id) {
+        const resumeDate = new Date(resumeAt).toUTCString();
+        const message = [
+          '🚨 <b>Cloud Atlas Bot — Risk Limit Breached</b>',
+          '',
+          `<b>Reason:</b> ${reason}`,
+          `<b>Cooldown:</b> ${Math.round(cooldownMs / 60000)} minutes`,
+          `<b>Auto-resume:</b> ${resumeDate}`,
+          '',
+          ...Object.entries(details).map(([k, v]) => `<b>${k}:</b> ${v}`),
+          '',
+          '<i>Trading has been paused automatically. The bot will resume after the cooldown period unless manually overridden.</i>',
+        ].join('\n');
+
+        await fetch(`https://api.telegram.org/bot${telegramToken}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: notifSettings.telegram_chat_id,
+            text: message,
+            parse_mode: 'HTML',
+          }),
+        });
+      }
+    } catch (notifErr) {
+      console.error('Operator notification failed (non-fatal):', notifErr);
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Main risk evaluation — called before every order placement.
+  // All DB queries are scoped to userId (authenticated JWT user).
+  // -------------------------------------------------------------------------
   async evaluateRisk(
     signal: TradingSignal,
     balance: number,
@@ -368,14 +442,18 @@ class RiskManager {
     // --- Load user's risk settings (with safe defaults) ---
     const { data: riskSettings } = await supabase
       .from('risk_settings')
-      .select('max_daily_loss, max_position_size, max_positions, stop_loss_pct, take_profit_pct, max_trade_size_usd, circuit_breaker_enabled, circuit_breaker_threshold')
+      .select('max_daily_loss, max_position_size, max_positions, stop_loss_pct, take_profit_pct, max_trade_size_usd, circuit_breaker_enabled, circuit_breaker_threshold, max_drawdown')
       .eq('user_id', userId)
       .maybeSingle();
 
-    // Use user settings clamped to absolute limits
+    // Clamp all user settings to absolute hard limits
     const maxDailyLossFraction = Math.min(
-      riskSettings?.max_daily_loss ? riskSettings.max_daily_loss / balance : 0.02,
+      riskSettings?.max_daily_loss ? riskSettings.max_daily_loss / 100 : 0.05,
       this.ABSOLUTE_MAX_DAILY_LOSS
+    );
+    const maxDrawdownFraction = Math.min(
+      riskSettings?.max_drawdown ? riskSettings.max_drawdown / 100 : 0.10,
+      this.ABSOLUTE_MAX_DRAWDOWN
     );
     const maxPositionFraction = Math.min(
       riskSettings?.max_position_size ?? 0.10,
@@ -395,7 +473,9 @@ class RiskManager {
       this.ABSOLUTE_MAX_TRADE_SIZE_USD
     );
 
-    // --- PHASE 2 FIX: Kill switch check (belt-and-suspenders) ---
+    // =========================================================================
+    // LAYER 1: Kill switch — immediate halt, no cooldown needed
+    // =========================================================================
     const { data: botConfig } = await supabase
       .from('bot_config')
       .select('is_paused, paused_reason')
@@ -407,60 +487,113 @@ class RiskManager {
       return { approved: false, positionSize: 0, stopLossPct, takeProfitPct, reason: `Trading paused: ${reason}` };
     }
 
-    // --- Check daily loss limit (user-scoped) ---
+    // =========================================================================
+    // LAYER 2: Daily loss limit — 24-hour cooldown on breach
+    // =========================================================================
     const today = new Date().toISOString().split('T')[0];
     const { data: todayPnL } = await supabase
       .from('daily_pnl')
       .select('total_pnl')
-      .eq('user_id', userId)  // PHASE 2 FIX: was missing user_id filter
+      .eq('user_id', userId)
       .eq('date', today)
       .maybeSingle();
 
     const dailyPnL = Number(todayPnL?.total_pnl ?? 0);
-    if (dailyPnL < -(balance * maxDailyLossFraction)) {
-      // PHASE 2 FIX: Automatically activate kill switch on daily loss breach
-      await supabase
-        .from('bot_config')
-        .update({ is_paused: true, paused_reason: 'DAILY_LOSS_LIMIT' })
-        .eq('user_id', userId);
-      return { approved: false, positionSize: 0, stopLossPct, takeProfitPct, reason: 'Daily loss limit reached — bot paused automatically' };
+    const dailyLossLimit = balance * maxDailyLossFraction;
+    if (dailyPnL < -dailyLossLimit) {
+      await this.engageCooldown(userId, 'DAILY_LOSS_LIMIT', this.COOLDOWN_DAILY_LOSS_MS, {
+        daily_pnl:        `$${dailyPnL.toFixed(2)}`,
+        daily_loss_limit: `$${dailyLossLimit.toFixed(2)} (${(maxDailyLossFraction * 100).toFixed(1)}% of capital)`,
+        balance:          `$${balance.toFixed(2)}`,
+        resume_in:        '24 hours',
+      });
+      return { approved: false, positionSize: 0, stopLossPct, takeProfitPct, reason: 'Daily loss limit reached — bot paused for 24 hours' };
     }
 
-    // --- Check circuit breaker ---
+    // =========================================================================
+    // LAYER 3: Maximum drawdown — 48-hour cooldown on breach
+    //
+    // Drawdown = (peak_balance - current_balance) / peak_balance
+    // Peak balance is the highest available_balance recorded in pnl_snapshots.
+    // =========================================================================
+    const { data: peakSnapshot } = await supabase
+      .from('pnl_snapshots')
+      .select('portfolio_value')
+      .eq('user_id', userId)
+      .order('portfolio_value', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (peakSnapshot) {
+      const peakBalance = Number(peakSnapshot.portfolio_value);
+      const drawdown = peakBalance > 0 ? (peakBalance - balance) / peakBalance : 0;
+      const drawdownLimit = maxDrawdownFraction;
+
+      if (drawdown > drawdownLimit) {
+        await this.engageCooldown(userId, 'MAX_DRAWDOWN', this.COOLDOWN_MAX_DRAWDOWN_MS, {
+          current_balance: `$${balance.toFixed(2)}`,
+          peak_balance:    `$${peakBalance.toFixed(2)}`,
+          drawdown:        `${(drawdown * 100).toFixed(2)}%`,
+          drawdown_limit:  `${(drawdownLimit * 100).toFixed(1)}%`,
+          resume_in:       '48 hours',
+        });
+        return { approved: false, positionSize: 0, stopLossPct, takeProfitPct, reason: `Maximum drawdown exceeded (${(drawdown * 100).toFixed(2)}%) — bot paused for 48 hours` };
+      }
+    }
+
+    // =========================================================================
+    // LAYER 4: Circuit breaker — 1-hour cooldown on breach
+    // =========================================================================
     if (riskSettings?.circuit_breaker_enabled && riskSettings?.circuit_breaker_threshold) {
       const { data: recentTrades } = await supabase
         .from('executed_trades')
         .select('realized_pnl')
         .eq('user_id', userId)
-        .gte('timestamp', new Date(Date.now() - 3600000).toISOString()); // last hour
+        .gte('timestamp', new Date(Date.now() - 3600000).toISOString());
 
-      const recentLoss = (recentTrades ?? []).reduce((sum: number, t: any) => sum + Number(t.realized_pnl ?? 0), 0);
-      if (recentLoss < -(balance * riskSettings.circuit_breaker_threshold)) {
-        await supabase
-          .from('bot_config')
-          .update({ is_paused: true, paused_reason: 'CIRCUIT_BREAKER' })
-          .eq('user_id', userId);
-        return { approved: false, positionSize: 0, stopLossPct, takeProfitPct, reason: 'Circuit breaker triggered — bot paused automatically' };
+      const recentLoss = (recentTrades ?? []).reduce(
+        (sum: number, t: any) => sum + Number(t.realized_pnl ?? 0), 0
+      );
+      const circuitBreakerLimit = balance * (riskSettings.circuit_breaker_threshold / 100);
+
+      if (recentLoss < -circuitBreakerLimit) {
+        await this.engageCooldown(userId, 'CIRCUIT_BREAKER', this.COOLDOWN_CIRCUIT_BREAKER_MS, {
+          recent_loss_1h:       `$${recentLoss.toFixed(2)}`,
+          circuit_breaker_limit: `$${circuitBreakerLimit.toFixed(2)} (${riskSettings.circuit_breaker_threshold}% of capital)`,
+          resume_in:            '1 hour',
+        });
+        return { approved: false, positionSize: 0, stopLossPct, takeProfitPct, reason: 'Circuit breaker triggered — bot paused for 1 hour' };
       }
     }
 
-    // --- Check max open positions (user-scoped) ---
+    // =========================================================================
+    // LAYER 5: Maximum open positions
+    // =========================================================================
     const { data: openPositions } = await supabase
       .from('trading_positions')
       .select('id')
-      .eq('user_id', userId)  // PHASE 2 FIX: was missing user_id filter
+      .eq('user_id', userId)
       .eq('status', 'open');
 
     if ((openPositions?.length ?? 0) >= maxPositions) {
       return { approved: false, positionSize: 0, stopLossPct, takeProfitPct, reason: 'Maximum open positions reached' };
     }
 
-    // --- Calculate position size using risk-based sizing ---
-    // Position size = (risk amount) / (entry price * stop loss %)
+    // =========================================================================
+    // LAYER 6: Mandatory stop-loss validation
+    // =========================================================================
+    if (stopLossPct <= 0) {
+      return { approved: false, positionSize: 0, stopLossPct, takeProfitPct, reason: 'Stop-loss percentage must be greater than zero' };
+    }
+
+    // =========================================================================
+    // Position sizing — Kelly-inspired risk-based sizing
+    // position_size = (risk_amount) / (entry_price * stop_loss_pct)
+    // =========================================================================
     const riskAmount = balance * maxPositionFraction;
     let positionSize = riskAmount / (signal.price * stopLossPct);
 
-    // PHASE 2 FIX: Hard cap on trade size in USD
+    // Hard cap on trade size in USD
     const tradeSizeUsd = positionSize * signal.price;
     if (tradeSizeUsd > maxTradeSizeUsd) {
       positionSize = maxTradeSizeUsd / signal.price;
@@ -468,11 +601,6 @@ class RiskManager {
 
     // Enforce minimum viable order size
     positionSize = Math.max(positionSize, 0.001);
-
-    // PHASE 2 FIX: Mandatory stop-loss — reject order if stop_loss_pct is zero
-    if (stopLossPct <= 0) {
-      return { approved: false, positionSize: 0, stopLossPct, takeProfitPct, reason: 'Stop-loss percentage must be greater than zero' };
-    }
 
     const approved = signal.confidence > 0.6;
     return {
