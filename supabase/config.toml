@@ -73,6 +73,17 @@ verify_jwt = true
 [functions.mcp-integration]
 verify_jwt = true
 
+# --- Phase 5: Monitoring and reporting ---
+[functions.alert-engine]
+verify_jwt = true
+
+[functions.report-engine]
+verify_jwt = true
+
+# scheduler-engine accepts both JWT and service-role key for cron invocations
+[functions.scheduler-engine]
+verify_jwt = true
+
 # --- REMOVE IN PRODUCTION: test function ---
 # [functions.auth-failure-test]
 # verify_jwt = false
