@@ -341,46 +341,146 @@ class RegimeDetector {
 }
 
 class RiskManager {
-  private maxRiskPerTrade = 0.005; // 0.5%
-  private maxDailyLoss = 0.02; // 2%
-  private maxPositions = 4;
+  // PHASE 2 FIX: Hard-coded absolute floor limits that can never be overridden
+  // by user configuration. These protect the system even if risk_settings are
+  // misconfigured or tampered with.
+  private readonly ABSOLUTE_MAX_RISK_PER_TRADE = 0.10;  // 10% of capital
+  private readonly ABSOLUTE_MAX_DAILY_LOSS     = 0.20;  // 20% of capital
+  private readonly ABSOLUTE_MAX_POSITIONS      = 10;
+  private readonly ABSOLUTE_MIN_STOP_LOSS_PCT  = 0.001; // 0.1% minimum
+  private readonly ABSOLUTE_MAX_TRADE_SIZE_USD = 10000; // $10,000 hard cap
 
-  async evaluateRisk(signal: TradingSignal, balance: number): Promise<{
+  // PHASE 2 FIX: evaluateRisk now requires user_id so all DB queries are
+  // scoped to the authenticated user. Previously, daily_pnl and
+  // trading_positions were queried without a user_id filter, meaning the
+  // RiskManager was aggregating data across ALL users.
+  async evaluateRisk(
+    signal: TradingSignal,
+    balance: number,
+    userId: string
+  ): Promise<{
     approved: boolean;
     positionSize: number;
+    stopLossPct: number;
+    takeProfitPct: number;
     reason?: string;
   }> {
-    // Check daily loss limit
+    // --- Load user's risk settings (with safe defaults) ---
+    const { data: riskSettings } = await supabase
+      .from('risk_settings')
+      .select('max_daily_loss, max_position_size, max_positions, stop_loss_pct, take_profit_pct, max_trade_size_usd, circuit_breaker_enabled, circuit_breaker_threshold')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    // Use user settings clamped to absolute limits
+    const maxDailyLossFraction = Math.min(
+      riskSettings?.max_daily_loss ? riskSettings.max_daily_loss / balance : 0.02,
+      this.ABSOLUTE_MAX_DAILY_LOSS
+    );
+    const maxPositionFraction = Math.min(
+      riskSettings?.max_position_size ?? 0.10,
+      this.ABSOLUTE_MAX_RISK_PER_TRADE
+    );
+    const maxPositions = Math.min(
+      riskSettings?.max_positions ?? 4,
+      this.ABSOLUTE_MAX_POSITIONS
+    );
+    const stopLossPct = Math.max(
+      riskSettings?.stop_loss_pct ?? 0.02,
+      this.ABSOLUTE_MIN_STOP_LOSS_PCT
+    );
+    const takeProfitPct = riskSettings?.take_profit_pct ?? 0.04;
+    const maxTradeSizeUsd = Math.min(
+      riskSettings?.max_trade_size_usd ?? 50.0,
+      this.ABSOLUTE_MAX_TRADE_SIZE_USD
+    );
+
+    // --- PHASE 2 FIX: Kill switch check (belt-and-suspenders) ---
+    const { data: botConfig } = await supabase
+      .from('bot_config')
+      .select('is_paused, paused_reason')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (botConfig?.is_paused === true) {
+      const reason = botConfig.paused_reason || 'Kill switch activated';
+      return { approved: false, positionSize: 0, stopLossPct, takeProfitPct, reason: `Trading paused: ${reason}` };
+    }
+
+    // --- Check daily loss limit (user-scoped) ---
     const today = new Date().toISOString().split('T')[0];
     const { data: todayPnL } = await supabase
       .from('daily_pnl')
       .select('total_pnl')
+      .eq('user_id', userId)  // PHASE 2 FIX: was missing user_id filter
       .eq('date', today)
-      .single();
-    
-    const dailyPnL = todayPnL?.total_pnl || 0;
-    if (dailyPnL < -balance * this.maxDailyLoss) {
-      return { approved: false, positionSize: 0, reason: 'Daily loss limit reached' };
+      .maybeSingle();
+
+    const dailyPnL = Number(todayPnL?.total_pnl ?? 0);
+    if (dailyPnL < -(balance * maxDailyLossFraction)) {
+      // PHASE 2 FIX: Automatically activate kill switch on daily loss breach
+      await supabase
+        .from('bot_config')
+        .update({ is_paused: true, paused_reason: 'DAILY_LOSS_LIMIT' })
+        .eq('user_id', userId);
+      return { approved: false, positionSize: 0, stopLossPct, takeProfitPct, reason: 'Daily loss limit reached — bot paused automatically' };
     }
-    
-    // Check max positions
+
+    // --- Check circuit breaker ---
+    if (riskSettings?.circuit_breaker_enabled && riskSettings?.circuit_breaker_threshold) {
+      const { data: recentTrades } = await supabase
+        .from('executed_trades')
+        .select('realized_pnl')
+        .eq('user_id', userId)
+        .gte('timestamp', new Date(Date.now() - 3600000).toISOString()); // last hour
+
+      const recentLoss = (recentTrades ?? []).reduce((sum: number, t: any) => sum + Number(t.realized_pnl ?? 0), 0);
+      if (recentLoss < -(balance * riskSettings.circuit_breaker_threshold)) {
+        await supabase
+          .from('bot_config')
+          .update({ is_paused: true, paused_reason: 'CIRCUIT_BREAKER' })
+          .eq('user_id', userId);
+        return { approved: false, positionSize: 0, stopLossPct, takeProfitPct, reason: 'Circuit breaker triggered — bot paused automatically' };
+      }
+    }
+
+    // --- Check max open positions (user-scoped) ---
     const { data: openPositions } = await supabase
       .from('trading_positions')
       .select('id')
+      .eq('user_id', userId)  // PHASE 2 FIX: was missing user_id filter
       .eq('status', 'open');
-    
-    if (openPositions && openPositions.length >= this.maxPositions) {
-      return { approved: false, positionSize: 0, reason: 'Maximum positions reached' };
+
+    if ((openPositions?.length ?? 0) >= maxPositions) {
+      return { approved: false, positionSize: 0, stopLossPct, takeProfitPct, reason: 'Maximum open positions reached' };
     }
-    
-    // Calculate position size based on risk
-    const riskAmount = balance * this.maxRiskPerTrade;
-    const positionSize = riskAmount / (signal.price * 0.02); // Assuming 2% stop loss
-    
+
+    // --- Calculate position size using risk-based sizing ---
+    // Position size = (risk amount) / (entry price * stop loss %)
+    const riskAmount = balance * maxPositionFraction;
+    let positionSize = riskAmount / (signal.price * stopLossPct);
+
+    // PHASE 2 FIX: Hard cap on trade size in USD
+    const tradeSizeUsd = positionSize * signal.price;
+    if (tradeSizeUsd > maxTradeSizeUsd) {
+      positionSize = maxTradeSizeUsd / signal.price;
+    }
+
+    // Enforce minimum viable order size
+    positionSize = Math.max(positionSize, 0.001);
+
+    // PHASE 2 FIX: Mandatory stop-loss — reject order if stop_loss_pct is zero
+    if (stopLossPct <= 0) {
+      return { approved: false, positionSize: 0, stopLossPct, takeProfitPct, reason: 'Stop-loss percentage must be greater than zero' };
+    }
+
+    const approved = signal.confidence > 0.6;
     return {
-      approved: signal.confidence > 0.6,
-      positionSize: Math.max(positionSize, 0.001), // Minimum order size
-      reason: signal.confidence <= 0.6 ? 'Low confidence signal' : undefined
+      approved,
+      positionSize,
+      stopLossPct,
+      takeProfitPct,
+      reason: !approved ? 'Signal confidence below threshold (0.6)' : undefined
     };
   }
 }
@@ -772,21 +872,30 @@ serve(async (req) => {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
 
-      case 'execute_trade':
+      case 'execute_trade': {
         // Get user's bot config
         const { data: botConfig } = await supabase
           .from('bot_config')
           .select('*')
           .eq('user_id', userId)
           .single();
-        
+
+        // PHASE 2 FIX: Check kill switch BEFORE is_active — paused takes priority
+        if (botConfig?.is_paused === true) {
+          const pauseReason = botConfig.paused_reason || 'Kill switch activated';
+          return new Response(JSON.stringify({ error: `Trading is paused: ${pauseReason}` }), {
+            status: 403,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
         if (!botConfig?.is_active) {
           return new Response(JSON.stringify({ error: 'Bot is not active' }), {
             status: 400,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
-        
+
         // Get latest signal
         const { data: latestSignal } = await supabase
           .from('strategy_signals')
@@ -795,52 +904,59 @@ serve(async (req) => {
           .order('created_at', { ascending: false })
           .limit(1)
           .single();
-        
+
         if (!latestSignal || latestSignal.signal_type === 'hold') {
           return new Response(JSON.stringify({ message: 'No actionable signal' }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
-        
-        // Risk evaluation
+
+        // PHASE 2 FIX: Pass userId to evaluateRisk so DB queries are user-scoped
         const balance = botConfig.capital_cad;
-        const riskEval = await riskManager.evaluateRisk(latestSignal, balance);
-        
+        const riskEval = await riskManager.evaluateRisk(latestSignal, balance, userId);
+
         if (!riskEval.approved) {
           await notificationManager.notifyTrade(latestSignal, false, riskEval.reason);
-          return new Response(JSON.stringify({ 
+          return new Response(JSON.stringify({
             message: 'Trade rejected by risk management',
-            reason: riskEval.reason 
+            reason: riskEval.reason
           }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
-        
+
         // Execute trade (paper trading mode)
         if (botConfig.mode === 'paper') {
+          // PHASE 2 FIX: Include stop_loss and take_profit prices in paper position
+          const stopLossPrice = latestSignal.price * (1 - riskEval.stopLossPct);
+          const takeProfitPrice = latestSignal.price * (1 + riskEval.takeProfitPct);
+
           const position = {
             user_id: userId,
             symbol,
             side: latestSignal.signal_type,
             quantity: riskEval.positionSize,
             entry_price: latestSignal.price,
+            stop_loss: stopLossPrice,
+            take_profit: takeProfitPrice,
             strategy_used: latestSignal.strategy_type,
-            risk_amount: balance * 0.005,
+            risk_amount: balance * (riskEval.stopLossPct ?? 0.02),
             status: 'open'
           };
-          
+
           await supabase.from('trading_positions').insert(position);
           await notificationManager.notifyTrade(latestSignal, true, 'Paper trade executed');
-          
-          return new Response(JSON.stringify({ 
+
+          return new Response(JSON.stringify({
             message: 'Paper trade executed successfully',
-            position 
+            position
           }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
-        
+
         break;
+      }
 
       case 'train_model':
         // Get historical data for training

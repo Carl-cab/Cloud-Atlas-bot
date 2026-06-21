@@ -2,6 +2,13 @@ import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { applyRateLimit, rateLimitConfigs } from '../_shared/rateLimiter.ts';
+import { audit, AuditCategory, AuditSeverity, auditLog } from '../_shared/auditLogger.ts';
+
+// Service-role client used exclusively for audit logging (bypasses RLS)
+const supabaseServiceRole = createClient(
+  Deno.env.get('SUPABASE_URL') ?? '',
+  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+);
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -17,6 +24,11 @@ interface OrderRequest {
   price?: number;
   stop_price?: number;
   time_in_force?: 'GTC' | 'IOC' | 'FOK';
+  // PHASE 2 FIX: Client-generated UUID for order idempotency.
+  // The caller must generate this before the request and store it locally.
+  // If the same client_order_id is submitted twice, the second call returns
+  // the existing order rather than placing a duplicate.
+  client_order_id?: string;
 }
 
 interface KrakenCredentials {
@@ -115,18 +127,63 @@ class LiveTradingEngine {
     return result.result;
   }
 
+  // PHASE 2 FIX: Check global kill switch before any order placement
+  private async checkKillSwitch(user_id: string): Promise<void> {
+    const { data: config, error } = await this.supabase
+      .from('bot_config')
+      .select('is_paused, paused_reason')
+      .eq('user_id', user_id)
+      .single();
+
+    if (error) {
+      // If we cannot read bot_config, fail safe: block the order
+      throw new Error('Unable to verify bot status — order blocked for safety');
+    }
+    if (config?.is_paused === true) {
+      const reason = config.paused_reason || 'Kill switch activated';
+      throw new Error(`Trading is paused: ${reason}`);
+    }
+  }
+
   // Place a live order
   async placeOrder(orderRequest: OrderRequest, userToken: string): Promise<any> {
+    // PHASE 2 FIX: Check kill switch FIRST — before credentials or validation
+    await this.checkKillSwitch(orderRequest.user_id);
+
+    // PHASE 2 FIX: Idempotency check — if client_order_id already exists, return existing order
+    const clientOrderId = orderRequest.client_order_id || crypto.randomUUID();
+    if (orderRequest.client_order_id) {
+      const { data: existingOrder } = await this.supabase
+        .from('executed_trades')
+        .select('*')
+        .eq('user_id', orderRequest.user_id)
+        .eq('client_order_id', clientOrderId)
+        .maybeSingle();
+
+      if (existingOrder) {
+        console.log(`Idempotency hit: order ${clientOrderId} already exists`);
+        return {
+          success: true,
+          idempotent: true,
+          order_id: existingOrder.kraken_order_id,
+          order_data: existingOrder
+        };
+      }
+    }
+
     const credentials = await this.getKrakenCredentials(orderRequest.user_id, userToken);
-    
+
     // Validate order before placement
     await this.validateOrder(orderRequest, userToken);
-    
+
     const krakenParams: Record<string, any> = {
       pair: this.mapSymbolToKraken(orderRequest.symbol),
       type: orderRequest.side,
       ordertype: orderRequest.type,
       volume: orderRequest.quantity.toString(),
+      // PHASE 2 FIX: Pass client_order_id as Kraken userref (max 32-bit int)
+      // We use the first 8 hex chars of the UUID converted to an integer
+      userref: parseInt(clientOrderId.replace(/-/g, '').substring(0, 8), 16).toString(),
     };
 
     // Add price for limit orders
@@ -151,10 +208,11 @@ class LiveTradingEngine {
         throw new Error(`Order placement failed: ${result.error.join(', ')}`);
       }
 
-      // Store order in database
+      // Store order in database with client_order_id for idempotency
       const orderData = {
         user_id: orderRequest.user_id,
         kraken_order_id: result.result.txid[0],
+        client_order_id: clientOrderId, // PHASE 2 FIX: persist for dedup
         symbol: orderRequest.symbol,
         side: orderRequest.side,
         type: orderRequest.type,
@@ -396,6 +454,7 @@ class LiveTradingEngine {
       .insert({
         user_id: orderData.user_id,
         kraken_order_id: orderData.kraken_order_id,
+        client_order_id: orderData.client_order_id || null, // PHASE 2 FIX
         symbol: orderData.symbol,
         side: orderData.side,
         trade_type: orderData.type,
@@ -405,10 +464,10 @@ class LiveTradingEngine {
         fee: 0, // Will be updated when trade executes
         realized_pnl: null
       });
-
     if (error) {
       console.error('Error storing order:', error);
     }
+  }
   }
 
   private async updateOrderStatus(order_id: string, status: string): Promise<void> {
@@ -460,11 +519,16 @@ serve(async (req) => {
     const { data: { user }, error: authError } = await supabaseAuth.auth.getUser(token);
     
     if (authError || !user) {
-      throw new Error('Invalid or expired token');
+      // PHASE 2 FIX: Log auth failures to audit log
+      await audit.authFailure(supabaseServiceRole, null, authError?.message ?? 'Invalid token');
+      return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
     }
 
-    // Apply rate limiting for trading operations
-    const rateLimitResponse = await applyRateLimit(req, rateLimitConfigs.trading);
+    // Apply rate limiting for trading operations (pass userId for user-scoped limits)
+    const rateLimitResponse = await applyRateLimit(req, rateLimitConfigs.trading, user.id);
     if (rateLimitResponse) {
       return rateLimitResponse;
     }
@@ -473,7 +537,12 @@ serve(async (req) => {
 
     // Validate that user_id matches authenticated user
     if (params.user_id && params.user_id !== user.id) {
-      throw new Error('Access denied: Cannot access another user\'s data');
+      // PHASE 2 FIX: Log cross-user access attempts
+      await audit.unauthorizedAccess(supabaseServiceRole, user.id, params.user_id, action);
+      return new Response(JSON.stringify({ success: false, error: 'Access denied' }), {
+        status: 403,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
     }
 
     // Use authenticated user ID for all operations
@@ -482,14 +551,30 @@ serve(async (req) => {
 
     switch (action) {
       case 'place_order': {
-        const result = await tradingEngine.placeOrder(params as OrderRequest, token);
-        
-        return new Response(JSON.stringify({
-          success: true,
-          ...result
-        }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
+        try {
+          const result = await tradingEngine.placeOrder(params as OrderRequest, token);
+          // PHASE 2 FIX: Audit log every executed trade
+          await audit.tradeExecuted(
+            supabaseServiceRole,
+            user.id,
+            result.order_id,
+            params.symbol,
+            params.side,
+            params.quantity,
+            params.price ?? 0,
+            result.idempotent ?? false
+          );
+          return new Response(JSON.stringify({ success: true, ...result }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        } catch (tradeError) {
+          // PHASE 2 FIX: Audit log every failed trade attempt
+          await audit.tradeFailed(supabaseServiceRole, user.id, tradeError.message, params);
+          return new Response(JSON.stringify({ success: false, error: 'Order placement failed' }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
       }
 
       case 'cancel_order': {
