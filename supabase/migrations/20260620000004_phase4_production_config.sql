@@ -105,8 +105,8 @@ CREATE INDEX IF NOT EXISTS idx_security_audit_log_user_severity
 -- ---------------------------------------------------------------------------
 -- 4. Rate limit table cleanup index
 -- ---------------------------------------------------------------------------
-CREATE INDEX IF NOT EXISTS idx_rate_limit_entries_window_start
-  ON public.rate_limit_entries (window_start);
+-- rate_limit_entries cleanup uses the existing idx_rate_limit_timestamp index
+-- (created in the original migration on the "timestamp" column).
 
 -- ---------------------------------------------------------------------------
 -- 5. Reconciliation log index for fast user queries

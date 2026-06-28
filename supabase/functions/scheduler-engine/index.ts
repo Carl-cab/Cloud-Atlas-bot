@@ -149,13 +149,13 @@ async function runAuditCleanup(): Promise<{ deleted: number }> {
 // Task: Rate limit table cleanup
 // ---------------------------------------------------------------------------
 async function runRateLimitCleanup(): Promise<{ deleted: number }> {
-  // Delete entries where window_start is more than 1 hour ago
-  const cutoff = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  // Delete entries where timestamp is more than 1 hour ago
+  const cutoff = Date.now() - 60 * 60 * 1000;
 
   const { error, count } = await supabaseAdmin
     .from('rate_limit_entries')
     .delete({ count: 'exact' })
-    .lt('window_start', cutoff);
+    .lt('timestamp', cutoff);
 
   if (error) {
     console.error('Rate limit cleanup failed:', error.message);

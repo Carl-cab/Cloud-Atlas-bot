@@ -213,7 +213,7 @@ async function checkBotConfig(): Promise<CheckResult[]> {
   try {
     const { data, error } = await supabaseAdmin
       .from('bot_config')
-      .select('is_paused, paper_trading_mode, max_daily_loss_pct')
+      .select('is_paused, mode, daily_stop_loss')
       .limit(1);
 
     if (error) {
@@ -228,7 +228,7 @@ async function checkBotConfig(): Promise<CheckResult[]> {
         name:     'bot_config_schema',
         category: 'trading',
         status:   'pass',
-        message:  'bot_config has required Phase 2 columns (is_paused, paper_trading_mode, max_daily_loss_pct)',
+        message:  'bot_config has required columns (is_paused, mode, daily_stop_loss)',
       });
     }
   } catch (e) {
@@ -244,8 +244,8 @@ async function checkBotConfig(): Promise<CheckResult[]> {
   try {
     const { data: liveConfigs, error } = await supabaseAdmin
       .from('bot_config')
-      .select('id, user_id, paper_trading_mode')
-      .eq('paper_trading_mode', false)
+      .select('id, user_id, mode')
+      .eq('mode', 'live')
       .eq('is_paused', false);
 
     if (!error && liveConfigs && liveConfigs.length > 0) {
@@ -337,12 +337,12 @@ async function checkAuditLog(): Promise<CheckResult[]> {
     const { error } = await supabaseAdmin
       .from('security_audit_log')
       .insert({
-        user_id:    null,
-        action:     'HEALTH_CHECK',
-        category:   'system',
-        severity:   'info',
-        details:    { message: 'Pre-flight health check audit log test' },
-        ip_address: '127.0.0.1',
+        user_id:        null,
+        action:         'HEALTH_CHECK',
+        event_category: 'system',
+        severity_level: 'info',
+        metadata:       { message: 'Pre-flight health check audit log test' },
+        ip_address:     '127.0.0.1',
       });
 
     results.push({
