@@ -126,9 +126,9 @@ echo "  Recent audit entries: $AUDIT_COUNT"
 echo ""
 
 # -----------------------------------------------
-# 5. COOLDOWN_ENGAGED audit entries
+# 5. Cooldown verification (checks both security_audit_log and risk_cooldowns)
 # -----------------------------------------------
-echo "--- 5. Cooldown Audit Entries ---"
+echo "--- 5. Cooldown Verification ---"
 COOLDOWN_COUNT=$(curl -s "${SUPABASE_URL}/rest/v1/security_audit_log?select=id&action=eq.COOLDOWN_ENGAGED" \
   -H "apikey: ${ANON_KEY}" \
   -H "Authorization: Bearer ${USER_JWT}" | python3 -c "
@@ -137,10 +137,35 @@ data = json.load(sys.stdin)
 print(len(data) if isinstance(data, list) else 0)
 " 2>/dev/null || echo "0")
 
+RISK_COOLDOWN_RAW=$(curl -s "${SUPABASE_URL}/rest/v1/risk_cooldowns?select=id,reason,engaged_at,resolved&order=engaged_at.desc&limit=10" \
+  -H "apikey: ${ANON_KEY}" \
+  -H "Authorization: Bearer ${USER_JWT}")
+
+RISK_COOLDOWN_COUNT=$(echo "$RISK_COOLDOWN_RAW" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+print(len(data) if isinstance(data, list) else 0)
+" 2>/dev/null || echo "0")
+
+echo "$RISK_COOLDOWN_RAW" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+if isinstance(data, list):
+    for entry in data[:3]:
+        reason = entry.get('reason', '?')
+        engaged = entry.get('engaged_at', '?')
+        resolved = entry.get('resolved', '?')
+        print(f'  - {engaged}: reason={reason} resolved={resolved}')
+" 2>/dev/null
+
 if [ "$COOLDOWN_COUNT" != "0" ] && [ -n "$COOLDOWN_COUNT" ]; then
-  echo "  [PASS] COOLDOWN_ENGAGED entries: $COOLDOWN_COUNT"
+  echo "  [PASS] COOLDOWN_ENGAGED audit entries: $COOLDOWN_COUNT"
+elif [ "$RISK_COOLDOWN_COUNT" != "0" ] && [ -n "$RISK_COOLDOWN_COUNT" ]; then
+  echo "  [PASS] Cooldown verified via risk_cooldowns table: $RISK_COOLDOWN_COUNT entries"
+  echo "  (audit log query returned 0 — may be RLS-restricted for user JWT reads)"
 else
-  echo "  [    ] COOLDOWN_ENGAGED entries: $COOLDOWN_COUNT (triggers on P&L loss limits)"
+  echo "  [    ] No cooldown entries found in audit log ($COOLDOWN_COUNT) or risk_cooldowns ($RISK_COOLDOWN_COUNT)"
+  echo "  Run: bash scripts/phase3-test-cooldown.sh"
 fi
 echo ""
 
@@ -179,11 +204,56 @@ for row in data:
 echo ""
 
 # -----------------------------------------------
-# 8. Kill switch test
+# 8. Kill switch verification
 # -----------------------------------------------
 echo "--- 8. Kill Switch ---"
-echo "  To test: temporarily set is_paused=true in bot_config, trigger a trade, verify rejection."
-echo "  (Run phase3-test-kill-switch.sh when ready)"
+KILL_SWITCH_RAW=$(curl -s "${SUPABASE_URL}/rest/v1/security_audit_log?select=id,action,created_at,details&action=eq.KILL_SWITCH_ACTIVATED&order=created_at.desc&limit=5" \
+  -H "apikey: ${ANON_KEY}" \
+  -H "Authorization: Bearer ${USER_JWT}")
+
+KILL_SWITCH_AUDIT=$(echo "$KILL_SWITCH_RAW" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+print(len(data) if isinstance(data, list) else 0)
+" 2>/dev/null || echo "0")
+
+echo "$KILL_SWITCH_RAW" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+if isinstance(data, list):
+    for entry in data[:3]:
+        ts = entry.get('created_at', '?')
+        details = entry.get('details', {})
+        trigger = details.get('trigger', '?')
+        reason = details.get('reason', '?')
+        print(f'  - {ts}: trigger={trigger} reason={reason}')
+" 2>/dev/null
+
+KILL_SWITCH_STATUS=$(curl -s "${SUPABASE_URL}/rest/v1/bot_config?select=is_paused,paused_reason" \
+  -H "apikey: ${ANON_KEY}" \
+  -H "Authorization: Bearer ${USER_JWT}" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+if not isinstance(data, list) or not data:
+    print('unknown')
+else:
+    row = data[0]
+    paused = row.get('is_paused', False)
+    reason = row.get('paused_reason', '')
+    if paused:
+        print(f'PAUSED (reason: {reason})')
+    else:
+        print('ACTIVE (is_paused=false)')
+" 2>/dev/null || echo "unknown")
+
+if [ "$KILL_SWITCH_AUDIT" != "0" ] && [ -n "$KILL_SWITCH_AUDIT" ]; then
+  echo "  [PASS] KILL_SWITCH_ACTIVATED audit entries: $KILL_SWITCH_AUDIT"
+else
+  echo "  [    ] No KILL_SWITCH_ACTIVATED audit entries (0)"
+  echo "  Note: The kill switch test uses direct DB updates, not the audit path."
+  echo "  Run: bash scripts/phase3-test-kill-switch.sh"
+fi
+echo "  Current status: $KILL_SWITCH_STATUS"
 echo ""
 
 # -----------------------------------------------
@@ -196,8 +266,9 @@ echo "  [ ] 7 days paper trading"
 echo "  [$([ "$TRADES" -ge 50 ] 2>/dev/null && echo "x" || echo " ")] 50+ paper trades ($TRADES)"
 echo "  [$([ "$RECON_FAILS" = "0" ] && echo "x" || echo " ")] 0 failed reconciliations ($RECON_FAILS)"
 echo "  [ ] Risk checks on every trade"
-echo "  [ ] Kill switch tested"
-echo "  [$([ "$COOLDOWN_COUNT" != "0" ] && [ -n "$COOLDOWN_COUNT" ] && echo "x" || echo " ")] Cooldown tested ($COOLDOWN_COUNT COOLDOWN_ENGAGED entries)"
+echo "  [$([ "$KILL_SWITCH_AUDIT" != "0" ] && [ -n "$KILL_SWITCH_AUDIT" ] && echo "x" || echo " ")] Kill switch (audit: $KILL_SWITCH_AUDIT, status: $KILL_SWITCH_STATUS)"
+COOLDOWN_TOTAL=$((COOLDOWN_COUNT + RISK_COOLDOWN_COUNT))
+echo "  [$([ "$COOLDOWN_TOTAL" -gt 0 ] 2>/dev/null && echo "x" || echo " ")] Cooldown tested (audit: $COOLDOWN_COUNT, risk_cooldowns: $RISK_COOLDOWN_COUNT)"
 echo "  [$([ "$AUDIT_COUNT" -ge 5 ] 2>/dev/null && echo "x" || echo " ")] Audit logs complete ($AUDIT_COUNT entries)"
 echo "  [ ] No real orders placed"
 echo "=============================================="
