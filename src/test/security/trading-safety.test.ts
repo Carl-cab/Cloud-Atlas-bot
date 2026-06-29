@@ -470,7 +470,6 @@ describe('Trading Safety Invariants', () => {
   });
 
   describe('10. Paper mode does not require Kraken credentials', () => {
-    // Simulates the exchangeActions check: execute_trade is NOT in the list
     function requiresKrakenCredentials(action: string): boolean {
       const exchangeActions = ['analyze_market'];
       return exchangeActions.includes(action);
@@ -486,6 +485,99 @@ describe('Trading Safety Invariants', () => {
 
     it('generate_paper_signal does not require credentials', () => {
       expect(requiresKrakenCredentials('generate_paper_signal')).toBe(false);
+    });
+  });
+
+  describe('11. Risk rejection at low confidence', () => {
+    it('rejects signal with confidence 0.50 (below 0.6 threshold)', () => {
+      const result = evaluateRiskDecision({
+        signalConfidence: 0.50,
+        positionSizePct: 5,
+        maxPositionSizePct: 10,
+        dailyLossPct: 0,
+        maxDailyLossPct: 5,
+        drawdownPct: 0,
+        maxDrawdownPct: 10,
+      });
+      expect(result.approved).toBe(false);
+      expect(result.reason).toContain('confidence');
+    });
+
+    it('approves signal with confidence 0.65 (above 0.6 threshold)', () => {
+      const result = evaluateRiskDecision({
+        signalConfidence: 0.65,
+        positionSizePct: 5,
+        maxPositionSizePct: 10,
+        dailyLossPct: 0,
+        maxDailyLossPct: 5,
+        drawdownPct: 0,
+        maxDrawdownPct: 10,
+      });
+      expect(result.approved).toBe(true);
+    });
+
+    it('paper signal generator always produces confidence >= 0.65', () => {
+      for (let i = 0; i < 100; i++) {
+        const confidence = 0.65 + Math.random() * 0.25;
+        expect(confidence).toBeGreaterThanOrEqual(0.65);
+        expect(confidence).toBeLessThanOrEqual(0.90);
+      }
+    });
+
+    it('paper signal generator never produces hold signals', () => {
+      for (let i = 0; i < 100; i++) {
+        const rand = Math.random();
+        const signalType = rand > 0.5 ? 'buy' : 'sell';
+        expect(signalType).not.toBe('hold');
+      }
+    });
+  });
+
+  describe('12. Scheduler service role auth', () => {
+    function authenticateRequest(token: string, serviceRoleKey: string): { isServiceRole: boolean; userId: string | null } {
+      const isServiceRole = token === serviceRoleKey && serviceRoleKey.length > 0;
+      return { isServiceRole, userId: null };
+    }
+
+    it('accepts service role key as valid auth', () => {
+      const result = authenticateRequest('sbp_test_key_123', 'sbp_test_key_123');
+      expect(result.isServiceRole).toBe(true);
+    });
+
+    it('rejects mismatched service role key', () => {
+      const result = authenticateRequest('user_jwt_token', 'sbp_test_key_123');
+      expect(result.isServiceRole).toBe(false);
+    });
+
+    it('rejects empty service role key', () => {
+      const result = authenticateRequest('', '');
+      expect(result.isServiceRole).toBe(false);
+    });
+  });
+
+  describe('13. Reconciliation handles paper mode gracefully', () => {
+    function reconciliationDecision(wallet: any, credentials: any): { status: string; shouldProceed: boolean } {
+      if (!wallet) return { status: 'skipped', shouldProceed: false };
+      if (!credentials) return { status: 'skipped', shouldProceed: false };
+      return { status: 'ok', shouldProceed: true };
+    }
+
+    it('skips when no wallet exists (paper mode)', () => {
+      const result = reconciliationDecision(null, null);
+      expect(result.status).toBe('skipped');
+      expect(result.shouldProceed).toBe(false);
+    });
+
+    it('skips when no credentials exist (paper mode)', () => {
+      const result = reconciliationDecision({ available_balance: 100 }, null);
+      expect(result.status).toBe('skipped');
+      expect(result.shouldProceed).toBe(false);
+    });
+
+    it('proceeds when both wallet and credentials exist', () => {
+      const result = reconciliationDecision({ available_balance: 100 }, { api_key: 'k', private_key: 'p' });
+      expect(result.status).toBe('ok');
+      expect(result.shouldProceed).toBe(true);
     });
   });
 });

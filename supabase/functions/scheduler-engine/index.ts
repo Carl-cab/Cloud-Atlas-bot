@@ -231,7 +231,7 @@ async function runDailyMaintenance(): Promise<Record<string, unknown>> {
   const reconResults = { success: 0, failed: 0, skipped: 0 };
   for (const userId of activeUsers) {
     const r = await invokeFunction('reconciliation-engine', {
-      action: 'reconcile',
+      action: 'run_reconciliation',
       user_id: userId,
       auto_adjust: false,
     });
@@ -370,7 +370,7 @@ serve(async (req) => {
         const activeUsers = await getActiveUsers();
         const results = { success: 0, failed: 0, users: activeUsers.length };
         for (const userId of activeUsers) {
-          const r = await invokeFunction('reconciliation-engine', { action: 'reconcile', user_id: userId });
+          const r = await invokeFunction('reconciliation-engine', { action: 'run_reconciliation', user_id: userId });
           if (r.success) results.success++;
           else results.failed++;
         }

@@ -109,31 +109,46 @@ serve(async (req) => {
   );
 
   try {
-    // --- JWT Validation ---
+    // --- Auth: accept both user JWT and service role key (for scheduler calls) ---
     const authHeader = req.headers.get('authorization');
     if (!authHeader?.startsWith('Bearer ')) {
-      await audit.authFailure(supabaseAdmin, null, 'Missing authorization header');
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
     const token = authHeader.replace('Bearer ', '');
-    const { data: { user }, error: authError } = await supabaseAuth.auth.getUser(token);
-
-    if (authError || !user) {
-      await audit.authFailure(supabaseAdmin, null, authError?.message ?? 'Invalid token');
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
-
-    const rateLimitResponse = await applyRateLimit(req, rateLimitConfigs.api, user.id);
-    if (rateLimitResponse) return rateLimitResponse;
+    const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+    const isServiceRole = token === SERVICE_ROLE_KEY && SERVICE_ROLE_KEY.length > 0;
 
     const body = await req.json();
+
+    let userId: string;
+    if (isServiceRole) {
+      userId = body.user_id;
+      if (!userId) {
+        return new Response(JSON.stringify({ error: 'user_id required for service role calls' }), {
+          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+    } else {
+      const { data: { user }, error: authError } = await supabaseAuth.auth.getUser(token);
+      if (authError || !user) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+          status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+      userId = user.id;
+
+      try {
+        const rateLimitResponse = await applyRateLimit(req, rateLimitConfigs.api, userId);
+        if (rateLimitResponse) return rateLimitResponse;
+      } catch (rlErr) {
+        console.error('Rate limit error (non-fatal):', rlErr);
+      }
+    }
+
     const { action } = body;
-    const userId = user.id;
 
     switch (action) {
 

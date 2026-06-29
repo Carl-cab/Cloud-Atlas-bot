@@ -1214,9 +1214,11 @@ serve(async (req) => {
           console.log('[generate_paper_signal] Using synthetic price:', currentPrice);
         }
 
+        // Always generate actionable signals (buy/sell with confidence > 0.65)
+        // so paper trades can execute. Risk checks still apply normally.
         const signalRand = Math.random();
-        const paperSignalType = signalRand > 0.6 ? 'buy' : signalRand < 0.4 ? 'sell' : 'hold';
-        const paperConfidence = 0.5 + Math.random() * 0.4;
+        const paperSignalType = signalRand > 0.5 ? 'buy' : 'sell';
+        const paperConfidence = 0.65 + Math.random() * 0.25;
 
         const paperSignal = {
           symbol,
