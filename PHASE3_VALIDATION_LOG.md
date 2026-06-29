@@ -24,13 +24,13 @@
 
 | Criterion | Target | Current | Status |
 |-----------|--------|---------|--------|
-| Days of paper trading | 7 | 0 | PENDING |
-| Paper trades executed | 50 | 0 | PENDING |
+| Days of paper trading | 7 | 1 | IN PROGRESS |
+| Paper trades executed | 50 | 4 | IN PROGRESS |
 | Failed reconciliations | 0 | 0 | PASS |
-| Risk checks per trade | 100% | — | PENDING |
-| Kill switch tested | Yes | No | PENDING |
-| Cooldown tested | Yes | No | PENDING |
-| Audit logs complete | Yes | — | PENDING |
+| Risk checks per trade | 100% | 100% | PASS |
+| Kill switch tested | Yes | Yes | PASS |
+| Cooldown tested | Yes | Partial | IN PROGRESS |
+| Audit logs complete | Yes | 5 entries | IN PROGRESS |
 | Real orders placed | 0 | 0 | PASS |
 
 ---
@@ -40,24 +40,31 @@
 ### Day 1 — 2026-06-29
 
 **Actions:**
-- [ ] Run `scripts/phase3-start-paper-trading.sh`
-- [ ] Verify paper trade executed
-- [ ] Verify scheduler ran daily maintenance
-- [ ] Run `scripts/phase3-monitor.sh` to check metrics
-- [ ] Run `scripts/phase3-test-kill-switch.sh`
-- [ ] Run `scripts/phase3-test-cooldown.sh`
+- [x] Run `scripts/phase3-start-paper-trading.sh`
+- [x] Verify paper trade executed
+- [x] Verify scheduler ran daily maintenance
+- [x] Run `scripts/phase3-monitor.sh` to check metrics
+- [x] Run `scripts/phase3-test-kill-switch.sh`
+- [x] Run `scripts/phase3-test-cooldown.sh`
 
 **Observations:**
-- (to be filled after running scripts locally)
+- Initial deployment had HTTP 500 errors due to rate limiter schema mismatch, credential fetch in paper mode, and `.single()` on empty tables. All fixed and redeployed.
+- Paper signal generation works: confidence 0.65–0.90, buy/sell only, real Kraken ticker data (XBTUSD).
+- Risk management correctly rejected a 0.50 confidence signal (threshold is 0.60) — not weakened.
+- Scheduler daily maintenance runs successfully: P&L snapshots, reconciliation (skipped gracefully in paper mode), alert threshold checks all pass.
+- Kill switch tested: trade correctly blocked when `is_paused=true`, resumed when unpaused.
+- Cooldown: partial test — rapid trades submitted but dedicated cooldown event not yet confirmed in logs.
+- Bot config after Day 1: `mode=paper`, `is_active=true`, `is_paused=false`.
+- No real orders placed (confirmed: live path returns HTTP 501).
 
 **Metrics:**
-- Paper trades: _
-- Reconciliation discrepancies: _
-- Risk events logged: _
-- Audit entries: _
-- P&L snapshots: _
-- Alerts triggered: _
-- Failures/warnings: _
+- Paper trades: 4
+- Reconciliation discrepancies: 0
+- Risk events logged: 1 (confidence rejection)
+- Audit entries: 5
+- P&L snapshots: 1
+- Alerts triggered: 0
+- Failures/warnings: 0 (after fixes deployed)
 
 ---
 
