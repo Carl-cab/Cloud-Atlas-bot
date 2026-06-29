@@ -206,6 +206,19 @@ export const audit = {
     ipAddress,
   }),
 
+  killSwitchReleased: (
+    supabase: ReturnType<typeof createClient>,
+    userId: string,
+    reason: string,
+    source: string
+  ) => auditLog(supabase, {
+    userId,
+    action: 'KILL_SWITCH_RELEASED',
+    category: AuditCategory.RISK,
+    severity: AuditSeverity.INFO,
+    details: { reason, source },
+  }),
+
   cooldownEngaged: (
     supabase: ReturnType<typeof createClient>,
     userId: string,

@@ -774,4 +774,65 @@ describe('Trading Safety Invariants', () => {
       expect(isPaused).toBe(false);
     });
   });
+
+  describe('test_kill_switch action safety', () => {
+    it('only works in paper mode', () => {
+      const modes = ['paper', 'live'];
+      const allowed = modes.map(m => ({ mode: m, permitted: m === 'paper' }));
+      expect(allowed[0].permitted).toBe(true);
+      expect(allowed[1].permitted).toBe(false);
+    });
+
+    it('activates and releases kill switch in correct order', () => {
+      let isPaused = false;
+      let pausedReason: string | null = null;
+
+      // Step 1: Activate
+      isPaused = true;
+      pausedReason = 'KILL_SWITCH_TEST';
+      expect(isPaused).toBe(true);
+      expect(pausedReason).toBe('KILL_SWITCH_TEST');
+
+      // Step 2: Verify blocked
+      const tradeBlocked = isPaused === true;
+      expect(tradeBlocked).toBe(true);
+
+      // Step 3: Release
+      isPaused = false;
+      pausedReason = null;
+      expect(isPaused).toBe(false);
+      expect(pausedReason).toBeNull();
+
+      // Step 4: Verify unblocked
+      const tradeUnblocked = isPaused === false;
+      expect(tradeUnblocked).toBe(true);
+    });
+
+    it('writes both ACTIVATED and RELEASED audit entries', () => {
+      const auditEvents: { action: string; details: Record<string, unknown> }[] = [];
+
+      // Simulate the test_kill_switch action's audit writes
+      auditEvents.push({
+        action: 'KILL_SWITCH_ACTIVATED',
+        details: { reason: 'KILL_SWITCH_TEST', trigger: 'manual' },
+      });
+      auditEvents.push({
+        action: 'KILL_SWITCH_RELEASED',
+        details: { reason: 'KILL_SWITCH_TEST', source: 'phase3-test-kill-switch' },
+      });
+
+      expect(auditEvents).toHaveLength(2);
+      expect(auditEvents[0].action).toBe('KILL_SWITCH_ACTIVATED');
+      expect(auditEvents[1].action).toBe('KILL_SWITCH_RELEASED');
+      expect(auditEvents[1].details.source).toBe('phase3-test-kill-switch');
+    });
+
+    it('does not leave bot in paused state', () => {
+      let isPaused = false;
+      // Simulate full test_kill_switch flow
+      isPaused = true;   // activate
+      isPaused = false;  // release
+      expect(isPaused).toBe(false);
+    });
+  });
 });

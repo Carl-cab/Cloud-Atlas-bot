@@ -254,29 +254,47 @@ else:
 echo ""
 
 # -----------------------------------------------
-# 8. Kill switch verification
+# 8. Kill switch verification (checks KILL_SWITCH_ACTIVATED + KILL_SWITCH_RELEASED)
 # -----------------------------------------------
 echo "--- 8. Kill Switch ---"
-KILL_SWITCH_RAW=$(curl -s "${SUPABASE_URL}/rest/v1/security_audit_log?select=id,action,created_at,details&action=eq.KILL_SWITCH_ACTIVATED&order=created_at.desc&limit=5" \
+KS_ACTIVATED_RAW=$(curl -s "${SUPABASE_URL}/rest/v1/security_audit_log?select=id,created_at,details&action=eq.KILL_SWITCH_ACTIVATED&order=created_at.desc&limit=5" \
   -H "apikey: ${ANON_KEY}" \
   -H "Authorization: Bearer ${USER_JWT}")
 
-KILL_SWITCH_AUDIT=$(echo "$KILL_SWITCH_RAW" | python3 -c "
+KS_ACTIVATED=$(echo "$KS_ACTIVATED_RAW" | python3 -c "
 import json, sys
 data = json.load(sys.stdin)
 print(len(data) if isinstance(data, list) else 0)
 " 2>/dev/null || echo "0")
 
-echo "$KILL_SWITCH_RAW" | python3 -c "
+echo "$KS_ACTIVATED_RAW" | python3 -c "
 import json, sys
 data = json.load(sys.stdin)
 if isinstance(data, list):
     for entry in data[:3]:
         ts = entry.get('created_at', '?')
         details = entry.get('details', {})
-        trigger = details.get('trigger', '?')
-        reason = details.get('reason', '?')
-        print(f'  - {ts}: trigger={trigger} reason={reason}')
+        print(f'  ACTIVATED {ts}: trigger={details.get(\"trigger\",\"?\")} reason={details.get(\"reason\",\"?\")}')
+" 2>/dev/null
+
+KS_RELEASED_RAW=$(curl -s "${SUPABASE_URL}/rest/v1/security_audit_log?select=id,created_at,details&action=eq.KILL_SWITCH_RELEASED&order=created_at.desc&limit=5" \
+  -H "apikey: ${ANON_KEY}" \
+  -H "Authorization: Bearer ${USER_JWT}")
+
+KS_RELEASED=$(echo "$KS_RELEASED_RAW" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+print(len(data) if isinstance(data, list) else 0)
+" 2>/dev/null || echo "0")
+
+echo "$KS_RELEASED_RAW" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+if isinstance(data, list):
+    for entry in data[:3]:
+        ts = entry.get('created_at', '?')
+        details = entry.get('details', {})
+        print(f'  RELEASED  {ts}: source={details.get(\"source\",\"?\")} reason={details.get(\"reason\",\"?\")}')
 " 2>/dev/null
 
 KILL_SWITCH_STATUS=$(echo "$BOT_MODE" | python3 -c "
@@ -288,16 +306,19 @@ else:
     row = data[0]
     paused = row.get('is_paused', False)
     if paused:
-        print(f'PAUSED')
+        print('PAUSED')
     else:
         print('ACTIVE (is_paused=false)')
 " 2>/dev/null || echo "unknown")
 
-if [ "$KILL_SWITCH_AUDIT" != "0" ] && [ -n "$KILL_SWITCH_AUDIT" ]; then
-  echo "  [PASS] KILL_SWITCH_ACTIVATED audit entries: $KILL_SWITCH_AUDIT"
+KS_EVIDENCE="false"
+if [ "$KS_ACTIVATED" != "0" ] && [ "$KS_RELEASED" != "0" ]; then
+  KS_EVIDENCE="true"
+  echo "  [PASS] Kill switch tested: $KS_ACTIVATED activated + $KS_RELEASED released"
+elif [ "$KS_ACTIVATED" != "0" ]; then
+  echo "  [WARN] KILL_SWITCH_ACTIVATED found ($KS_ACTIVATED) but no KILL_SWITCH_RELEASED"
 else
-  echo "  [    ] No KILL_SWITCH_ACTIVATED audit entries (0)"
-  echo "  Note: Kill switch test uses direct DB updates, not the audit path."
+  echo "  [    ] No kill switch audit entries found"
   echo "  Run: bash scripts/phase3-test-kill-switch.sh"
 fi
 echo "  Current status: $KILL_SWITCH_STATUS"
@@ -401,7 +422,7 @@ echo "  [$([ "$TRADING_DAY_COUNT" -ge 7 ] 2>/dev/null && echo "x" || echo " ")] 
 echo "  [$([ "$TRADES" -ge 50 ] 2>/dev/null && echo "x" || echo " ")] 50+ paper trades ($TRADES)"
 echo "  [$([ "$RECON_FAILS" = "0" ] && echo "x" || echo " ")] 0 failed reconciliations ($RECON_FAILS)"
 echo "  [$([ "$RISK_COVERAGE" = "pass_audit" ] || [ "$RISK_COVERAGE" = "pass_positions" ] && echo "x" || echo " ")] Risk checks on every trade ($RISK_COVERAGE)"
-echo "  [$([ "$KILL_SWITCH_AUDIT" != "0" ] && [ -n "$KILL_SWITCH_AUDIT" ] && echo "x" || echo " ")] Kill switch (audit: $KILL_SWITCH_AUDIT, status: $KILL_SWITCH_STATUS)"
+echo "  [$([ "$KS_EVIDENCE" = "true" ] && echo "x" || echo " ")] Kill switch (activated: $KS_ACTIVATED, released: $KS_RELEASED, status: $KILL_SWITCH_STATUS)"
 echo "  [$([ "$COOLDOWN_TOTAL" -gt 0 ] 2>/dev/null && echo "x" || echo " ")] Cooldown tested (audit: $COOLDOWN_COUNT, risk_cooldowns: $RISK_COOLDOWN_COUNT)"
 echo "  [$([ "$AUDIT_COUNT" -ge 5 ] 2>/dev/null && echo "x" || echo " ")] Audit logs present ($AUDIT_COUNT entries)"
 echo "  [$([ "$NO_REAL_ORDERS" = "true" ] && echo "x" || echo " ")] No real orders placed (live_trades: $LIVE_TRADES, broker_orders: $BROKER_LIVE_ORDERS)"
@@ -413,7 +434,7 @@ PASS_COUNT=0
 [ "$TRADES" -ge 50 ] 2>/dev/null && PASS_COUNT=$((PASS_COUNT + 1))
 [ "$RECON_FAILS" = "0" ] && PASS_COUNT=$((PASS_COUNT + 1))
 ([ "$RISK_COVERAGE" = "pass_audit" ] || [ "$RISK_COVERAGE" = "pass_positions" ]) && PASS_COUNT=$((PASS_COUNT + 1))
-([ "$KILL_SWITCH_AUDIT" != "0" ] && [ -n "$KILL_SWITCH_AUDIT" ]) && PASS_COUNT=$((PASS_COUNT + 1))
+[ "$KS_EVIDENCE" = "true" ] && PASS_COUNT=$((PASS_COUNT + 1))
 [ "$COOLDOWN_TOTAL" -gt 0 ] 2>/dev/null && PASS_COUNT=$((PASS_COUNT + 1))
 [ "$AUDIT_COUNT" -ge 5 ] 2>/dev/null && PASS_COUNT=$((PASS_COUNT + 1))
 [ "$NO_REAL_ORDERS" = "true" ] && PASS_COUNT=$((PASS_COUNT + 1))

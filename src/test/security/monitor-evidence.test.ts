@@ -107,6 +107,17 @@ function classifyNoRealOrders(
   };
 }
 
+function classifyKillSwitchEvidence(
+  activated: AuditEntry[],
+  released: AuditEntry[]
+): { pass: boolean; activatedCount: number; releasedCount: number } {
+  return {
+    pass: activated.length > 0 && released.length > 0,
+    activatedCount: activated.length,
+    releasedCount: released.length,
+  };
+}
+
 // ==========================================================================
 // Tests
 // ==========================================================================
@@ -298,6 +309,59 @@ describe('Phase 3: Monitor Evidence Logic', () => {
       ];
       const result = classifyNoRealOrders(trades, [], true);
       expect(result.pass).toBe(true);
+    });
+  });
+
+  describe('5. Kill Switch Evidence', () => {
+    it('passes when both ACTIVATED and RELEASED entries exist', () => {
+      const activated: AuditEntry[] = [
+        { id: 'a1', action: 'KILL_SWITCH_ACTIVATED', created_at: '2026-07-01T10:00:00Z', details: { trigger: 'manual', reason: 'KILL_SWITCH_TEST' } },
+      ];
+      const released: AuditEntry[] = [
+        { id: 'a2', action: 'KILL_SWITCH_RELEASED', created_at: '2026-07-01T10:00:01Z', details: { source: 'phase3-test-kill-switch', reason: 'KILL_SWITCH_TEST' } },
+      ];
+      const result = classifyKillSwitchEvidence(activated, released);
+      expect(result.pass).toBe(true);
+      expect(result.activatedCount).toBe(1);
+      expect(result.releasedCount).toBe(1);
+    });
+
+    it('fails when only ACTIVATED exists (no release)', () => {
+      const activated: AuditEntry[] = [
+        { id: 'a1', action: 'KILL_SWITCH_ACTIVATED', created_at: '2026-07-01T10:00:00Z' },
+      ];
+      const result = classifyKillSwitchEvidence(activated, []);
+      expect(result.pass).toBe(false);
+    });
+
+    it('fails when only RELEASED exists (no activation)', () => {
+      const released: AuditEntry[] = [
+        { id: 'a1', action: 'KILL_SWITCH_RELEASED', created_at: '2026-07-01T10:00:01Z' },
+      ];
+      const result = classifyKillSwitchEvidence([], released);
+      expect(result.pass).toBe(false);
+    });
+
+    it('fails when both are empty', () => {
+      const result = classifyKillSwitchEvidence([], []);
+      expect(result.pass).toBe(false);
+      expect(result.activatedCount).toBe(0);
+      expect(result.releasedCount).toBe(0);
+    });
+
+    it('passes with multiple test runs', () => {
+      const activated: AuditEntry[] = [
+        { id: 'a1', action: 'KILL_SWITCH_ACTIVATED', created_at: '2026-07-01T10:00:00Z' },
+        { id: 'a2', action: 'KILL_SWITCH_ACTIVATED', created_at: '2026-07-02T10:00:00Z' },
+      ];
+      const released: AuditEntry[] = [
+        { id: 'r1', action: 'KILL_SWITCH_RELEASED', created_at: '2026-07-01T10:00:01Z' },
+        { id: 'r2', action: 'KILL_SWITCH_RELEASED', created_at: '2026-07-02T10:00:01Z' },
+      ];
+      const result = classifyKillSwitchEvidence(activated, released);
+      expect(result.pass).toBe(true);
+      expect(result.activatedCount).toBe(2);
+      expect(result.releasedCount).toBe(2);
     });
   });
 });

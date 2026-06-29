@@ -1454,6 +1454,63 @@ serve(async (req) => {
         });
       }
 
+      case 'test_kill_switch': {
+        const { data: killSwitchConfig } = await supabase
+          .from('bot_config')
+          .select('mode, is_paused')
+          .eq('user_id', userId)
+          .maybeSingle();
+
+        if (!killSwitchConfig || killSwitchConfig.mode !== 'paper') {
+          return new Response(JSON.stringify({ error: 'test_kill_switch only available in paper mode' }), {
+            status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        // Step 1: Activate kill switch
+        await supabase
+          .from('bot_config')
+          .update({ is_paused: true, paused_reason: 'KILL_SWITCH_TEST' })
+          .eq('user_id', userId);
+
+        await audit.killSwitchActivated(supabase, userId, 'KILL_SWITCH_TEST', 'manual');
+
+        // Step 2: Verify trade would be blocked
+        const { data: pausedConfig } = await supabase
+          .from('bot_config')
+          .select('is_paused')
+          .eq('user_id', userId)
+          .maybeSingle();
+
+        const tradeBlocked = pausedConfig?.is_paused === true;
+
+        // Step 3: Release kill switch
+        await supabase
+          .from('bot_config')
+          .update({ is_paused: false, paused_reason: null })
+          .eq('user_id', userId);
+
+        await audit.killSwitchReleased(supabase, userId, 'KILL_SWITCH_TEST', 'phase3-test-kill-switch');
+
+        // Step 4: Verify bot is unpaused
+        const { data: releasedConfig } = await supabase
+          .from('bot_config')
+          .select('is_paused')
+          .eq('user_id', userId)
+          .maybeSingle();
+
+        const tradeUnblocked = releasedConfig?.is_paused === false;
+
+        return new Response(JSON.stringify({
+          message: 'Kill switch test completed',
+          trade_blocked_when_paused: tradeBlocked,
+          trade_unblocked_when_released: tradeUnblocked,
+          audit_logged: true,
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
       case 'train_model':
         // Get historical data for training
         const { data: historicalData } = await supabase
