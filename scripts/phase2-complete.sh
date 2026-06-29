@@ -19,7 +19,7 @@
 
 set -euo pipefail
 
-PROJECT_REF="asxcbnkpflgecqreegdd"
+PROJECT_REF="ijwxlzwdysvvghmxlrnq"
 SUPABASE_URL="https://${PROJECT_REF}.supabase.co"
 
 echo "=============================================="

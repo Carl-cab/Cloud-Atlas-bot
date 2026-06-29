@@ -18,7 +18,7 @@ Online validation (deploy, migrate, health-check) cannot be run from the cloud s
 
 The cloud sandbox egress proxy returns HTTP 403 for:
 - `api.supabase.com:443` (CLI operations: deploy, link, push)
-- `asxcbnkpflgecqreegdd.supabase.co:443` (health-check endpoint)
+- `ijwxlzwdysvvghmxlrnq.supabase.co:443` (health-check endpoint)
 
 This is a sandbox restriction, not a code issue. The `SUPABASE_ACCESS_TOKEN` was provided and authentication succeeded, but all subsequent API calls are blocked.
 
@@ -93,7 +93,7 @@ This is a sandbox restriction, not a code issue. The `SUPABASE_ACCESS_TOKEN` was
 | TELEGRAM_CHAT_ID | Recommended | Telegram alerts |
 | Kraken API keys | Per-user | Stored encrypted in DB, not as env secrets |
 
-**Verify at**: https://supabase.com/dashboard/project/asxcbnkpflgecqreegdd/settings/functions
+**Verify at**: https://supabase.com/dashboard/project/ijwxlzwdysvvghmxlrnq/settings/functions
 
 ---
 
@@ -205,20 +205,20 @@ export SUPABASE_ACCESS_TOKEN="sbp_xxxxxxxxxxxx"
 
 # Authenticate and link
 npx supabase login --token "$SUPABASE_ACCESS_TOKEN"
-npx supabase link --project-ref asxcbnkpflgecqreegdd
+npx supabase link --project-ref ijwxlzwdysvvghmxlrnq
 
 # Push migrations
-npx supabase db push --project-ref asxcbnkpflgecqreegdd
+npx supabase db push --project-ref ijwxlzwdysvvghmxlrnq
 
 # Deploy all functions
-npx supabase functions deploy --project-ref asxcbnkpflgecqreegdd
+npx supabase functions deploy --project-ref ijwxlzwdysvvghmxlrnq
 
 # Verify secrets in Dashboard:
-#   https://supabase.com/dashboard/project/asxcbnkpflgecqreegdd/settings/functions
+#   https://supabase.com/dashboard/project/ijwxlzwdysvvghmxlrnq/settings/functions
 #   Required: ENCRYPTION_KEY (>= 32 chars)
 
 # Run health-check
-export SUPABASE_URL="https://asxcbnkpflgecqreegdd.supabase.co"
+export SUPABASE_URL="https://ijwxlzwdysvvghmxlrnq.supabase.co"
 export USER_JWT="<your-jwt-token>"
 export SUPABASE_ANON_KEY="<your-anon-key>"
 bash scripts/run-health-check.sh

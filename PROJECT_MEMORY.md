@@ -38,7 +38,7 @@ Build a secure, functional, risk-managed autonomous crypto trading bot that:
 
 ## Supabase Project
 
-- Project ref: `mhaggmeoxdepwyshkyff`
+- Project ref: `ijwxlzwdysvvghmxlrnq`
 - Environment variables set via Supabase Dashboard (never in .env)
 
 ## Security Phases Completed

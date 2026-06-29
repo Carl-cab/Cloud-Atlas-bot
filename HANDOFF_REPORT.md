@@ -80,7 +80,7 @@ Live trading remains intentionally blocked:
 ## Next Steps (User Action Required)
 
 ### To Start Paper Trading
-1. Deploy edge functions: `SUPABASE_ACCESS_TOKEN=<pat> npx supabase functions deploy --project-ref mhaggmeoxdepwyshkyff`
+1. Deploy edge functions: `SUPABASE_ACCESS_TOKEN=<pat> npx supabase functions deploy --project-ref ijwxlzwdysvvghmxlrnq`
 2. Run migrations via Supabase Dashboard
 3. Store Kraken API keys (read-only) via Settings tab
 4. Activate bot in paper mode via dashboard

@@ -26,7 +26,7 @@
 
 set -euo pipefail
 
-PROJECT_REF="asxcbnkpflgecqreegdd"
+PROJECT_REF="ijwxlzwdysvvghmxlrnq"
 SUPABASE_ACCESS_TOKEN="${SUPABASE_ACCESS_TOKEN:?'Set SUPABASE_ACCESS_TOKEN first. Get one at https://supabase.com/dashboard/account/tokens'}"
 
 echo "=============================================="

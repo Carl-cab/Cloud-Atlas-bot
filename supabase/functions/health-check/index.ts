@@ -342,7 +342,6 @@ async function checkAuditLog(): Promise<CheckResult[]> {
         event_category: 'system',
         severity_level: 'info',
         metadata:       { message: 'Pre-flight health check audit log test' },
-        ip_address:     '127.0.0.1',
       });
 
     results.push({

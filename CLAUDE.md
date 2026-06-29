@@ -15,7 +15,7 @@ npx vitest run path/to/file.test.ts  # Single test file
 
 Deploy edge functions:
 ```bash
-SUPABASE_ACCESS_TOKEN=<pat> npx supabase functions deploy --project-ref mhaggmeoxdepwyshkyff
+SUPABASE_ACCESS_TOKEN=<pat> npx supabase functions deploy --project-ref ijwxlzwdysvvghmxlrnq
 ```
 
 ## Architecture
