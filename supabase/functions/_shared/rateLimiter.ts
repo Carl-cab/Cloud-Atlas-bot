@@ -93,15 +93,17 @@ export class RateLimiter {
       };
     }
 
-    // Record this request — store the resolved key and validated IP separately
-    await this.supabase
-      .from('rate_limit_entries')
-      .insert({
-        key,
-        timestamp: now,
-        ip_address: this.getClientIP(request),
-        user_agent: request.headers.get('user-agent') || ''
-      });
+    // Record this request
+    try {
+      await this.supabase
+        .from('rate_limit_entries')
+        .insert({
+          key,
+          timestamp: now,
+        });
+    } catch (insertErr) {
+      console.error('Rate limit insert error (non-fatal):', insertErr);
+    }
 
     return {
       allowed: true,

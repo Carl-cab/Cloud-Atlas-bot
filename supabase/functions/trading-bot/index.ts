@@ -777,13 +777,19 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  // Apply rate limiting for API endpoints
-  const rateLimitResponse = await applyRateLimit(req, rateLimitConfigs.api);
-  if (rateLimitResponse) {
-    return rateLimitResponse;
-  }
-
   try {
+    // Apply rate limiting (fail open if rate limiter errors)
+    try {
+      const rateLimitResponse = await applyRateLimit(req, rateLimitConfigs.api);
+      if (rateLimitResponse) {
+        return rateLimitResponse;
+      }
+    } catch (rlErr) {
+      console.error('Rate limiter error (non-fatal, failing open):', rlErr);
+    }
+
+    console.log('[trading-bot] Request received, version: phase3-debug-v2');
+
     // --- PHASE 0 FIX: Strict JWT validation ---
     const authHeader = req.headers.get('authorization');
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -1002,15 +1008,22 @@ serve(async (req) => {
         });
 
       case 'execute_trade': {
+        console.log('[execute_trade] Starting for user:', userId, 'symbol:', symbol);
+
         // Get user's bot config
-        let { data: botConfig } = await supabase
+        const { data: botConfigData, error: botConfigErr } = await supabase
           .from('bot_config')
           .select('*')
           .eq('user_id', userId)
           .maybeSingle();
 
+        console.log('[execute_trade] bot_config query result:', botConfigData ? 'found' : 'null', botConfigErr ? `err: ${botConfigErr.message}` : 'no-error');
+
+        let botConfig = botConfigData;
+
         // Auto-initialize safe paper config if none exists
         if (!botConfig) {
+          console.log('[execute_trade] No bot_config found, auto-creating paper config');
           const defaultConfig = {
             user_id: userId,
             mode: 'paper',
@@ -1026,7 +1039,7 @@ serve(async (req) => {
             .single();
 
           if (insertErr) {
-            console.error('Failed to create bot_config:', insertErr.message);
+            console.error('[execute_trade] bot_config insert failed:', insertErr.message, insertErr.details, insertErr.hint);
             return new Response(JSON.stringify({
               error: 'Bot configuration could not be initialized',
               detail: insertErr.message,
@@ -1035,6 +1048,7 @@ serve(async (req) => {
               headers: { ...corsHeaders, 'Content-Type': 'application/json' }
             });
           }
+          console.log('[execute_trade] bot_config created:', newConfig?.mode);
           botConfig = newConfig;
         }
 
@@ -1055,13 +1069,16 @@ serve(async (req) => {
         }
 
         // Get latest signal
-        const { data: latestSignal } = await supabase
+        console.log('[execute_trade] Querying strategy_signals for symbol:', symbol);
+        const { data: latestSignal, error: sigErr } = await supabase
           .from('strategy_signals')
           .select('*')
           .eq('symbol', symbol)
           .order('created_at', { ascending: false })
           .limit(1)
-          .single();
+          .maybeSingle();
+
+        console.log('[execute_trade] Signal result:', latestSignal ? latestSignal.signal_type : 'null', sigErr ? `err: ${sigErr.message}` : 'no-error');
 
         if (!latestSignal || latestSignal.signal_type === 'hold') {
           return new Response(JSON.stringify({ message: 'No actionable signal' }), {
@@ -1070,11 +1087,13 @@ serve(async (req) => {
         }
 
         // PHASE 2 FIX: Pass userId to evaluateRisk so DB queries are user-scoped
-        const balance = botConfig.capital_cad;
+        const balance = Number(botConfig.capital_cad) || 10000;
+        console.log('[execute_trade] Running risk evaluation, balance:', balance);
         const riskEval = await riskManager.evaluateRisk(latestSignal, balance, userId);
+        console.log('[execute_trade] Risk result: approved=', riskEval.approved, 'reason=', riskEval.reason);
 
         if (!riskEval.approved) {
-          await notificationManager.notifyTrade(latestSignal, false, riskEval.reason);
+          try { await notificationManager.notifyTrade(latestSignal, false, riskEval.reason); } catch (nErr) { console.error('[execute_trade] Notification error (non-fatal):', nErr); }
           return new Response(JSON.stringify({
             message: 'Trade rejected by risk management',
             reason: riskEval.reason
@@ -1085,7 +1104,6 @@ serve(async (req) => {
 
         // Execute trade (paper trading mode)
         if (botConfig.mode === 'paper') {
-          // PHASE 2 FIX: Include stop_loss and take_profit prices in paper position
           const stopLossPrice = latestSignal.price * (1 - riskEval.stopLossPct);
           const takeProfitPrice = latestSignal.price * (1 + riskEval.takeProfitPct);
 
@@ -1102,8 +1120,19 @@ serve(async (req) => {
             status: 'open'
           };
 
-          await supabase.from('trading_positions').insert(position);
-          await notificationManager.notifyTrade(latestSignal, true, 'Paper trade executed');
+          console.log('[execute_trade] Inserting paper position:', position.side, position.symbol, position.entry_price);
+          const { error: posErr } = await supabase.from('trading_positions').insert(position);
+          if (posErr) {
+            console.error('[execute_trade] Position insert failed:', posErr.message, posErr.details, posErr.hint);
+            return new Response(JSON.stringify({
+              error: 'Paper trade position insert failed',
+              detail: posErr.message,
+            }), {
+              status: 500,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
+          try { await notificationManager.notifyTrade(latestSignal, true, 'Paper trade executed'); } catch (nErr) { console.error('[execute_trade] Notification error (non-fatal):', nErr); }
 
           return new Response(JSON.stringify({
             message: 'Paper trade executed successfully',
@@ -1164,27 +1193,27 @@ serve(async (req) => {
       }
 
       case 'generate_paper_signal': {
-        // Generate a trading signal for paper mode using public market data (no API keys needed).
-        // Uses Kraken's public ticker endpoint for real prices; falls back to synthetic if unreachable.
+        console.log('[generate_paper_signal] Starting for symbol:', symbol);
         let currentPrice: number;
         try {
           const tickerResp = await fetch(`https://api.kraken.com/0/public/Ticker?pair=${symbol}`);
           const tickerData = await tickerResp.json();
           const pairKey = Object.keys(tickerData.result || {})[0];
           currentPrice = pairKey ? parseFloat(tickerData.result[pairKey].c[0]) : 0;
-        } catch {
+          console.log('[generate_paper_signal] Kraken price:', currentPrice);
+        } catch (fetchErr) {
+          console.error('[generate_paper_signal] Kraken fetch failed:', fetchErr);
           currentPrice = 0;
         }
 
         if (!currentPrice || isNaN(currentPrice)) {
-          // Synthetic fallback based on symbol
           const basePrices: Record<string, number> = { 'XBTUSD': 65000, 'ETHUSD': 3500, 'SOLUSD': 150 };
           const basePrice = basePrices[symbol] ?? basePrices['XBTUSD'] ?? 65000;
           const variation = (Math.random() - 0.5) * 0.02;
           currentPrice = basePrice * (1 + variation);
+          console.log('[generate_paper_signal] Using synthetic price:', currentPrice);
         }
 
-        // Generate a signal with slight randomness to simulate real signals
         const signalRand = Math.random();
         const paperSignalType = signalRand > 0.6 ? 'buy' : signalRand < 0.4 ? 'sell' : 'hold';
         const paperConfidence = 0.5 + Math.random() * 0.4;
@@ -1200,8 +1229,20 @@ serve(async (req) => {
           ml_score: 0.5 + Math.random() * 0.3,
         };
 
-        await supabase.from('strategy_signals').insert(paperSignal);
+        console.log('[generate_paper_signal] Inserting signal:', paperSignal.signal_type, paperSignal.price);
+        const { error: sigInsertErr } = await supabase.from('strategy_signals').insert(paperSignal);
+        if (sigInsertErr) {
+          console.error('[generate_paper_signal] Insert failed:', sigInsertErr.message);
+          return new Response(JSON.stringify({
+            error: 'Failed to insert signal',
+            detail: sigInsertErr.message,
+          }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
 
+        console.log('[generate_paper_signal] Success');
         return new Response(JSON.stringify({
           message: 'Paper signal generated',
           signal: paperSignal,
@@ -1243,9 +1284,13 @@ serve(async (req) => {
     }
 
   } catch (error) {
-    // SECURITY: Do not leak internal error details to the client
-    console.error('Trading bot error:', error);
-    return new Response(JSON.stringify({ error: 'Internal server error' }), {
+    // Log full error for debugging; do not leak to client
+    console.error('[trading-bot] UNHANDLED ERROR:', error?.message ?? error, error?.stack ?? '');
+    return new Response(JSON.stringify({
+      error: 'Internal server error',
+      // Include error name/message in response during Phase 3 debugging only
+      debug_hint: error?.message ?? 'unknown',
+    }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
