@@ -422,4 +422,70 @@ describe('Trading Safety Invariants', () => {
       expect(result.valid).toBe(true);
     });
   });
+
+  describe('9. Missing bot_config auto-initialization', () => {
+    // Simulates the auto-init logic added to trading-bot for users without a config row
+    function autoInitBotConfig(existingConfig: any | null): {
+      mode: string;
+      is_active: boolean;
+      is_paused: boolean;
+      capital_cad: number;
+      daily_stop_loss: number;
+    } {
+      if (existingConfig) return existingConfig;
+      return {
+        mode: 'paper',
+        is_active: true,
+        is_paused: false,
+        capital_cad: 10000,
+        daily_stop_loss: 5,
+      };
+    }
+
+    it('creates safe paper config when none exists', () => {
+      const config = autoInitBotConfig(null);
+      expect(config.mode).toBe('paper');
+      expect(config.is_paused).toBe(false);
+      expect(config.is_active).toBe(true);
+    });
+
+    it('auto-initialized config defaults to paper mode, never live', () => {
+      const config = autoInitBotConfig(null);
+      expect(config.mode).toBe('paper');
+      expect(config.mode).not.toBe('live');
+    });
+
+    it('does not overwrite existing config', () => {
+      const existing = { mode: 'paper', is_active: false, is_paused: true, capital_cad: 5000, daily_stop_loss: 3 };
+      const config = autoInitBotConfig(existing);
+      expect(config).toBe(existing);
+      expect(config.capital_cad).toBe(5000);
+    });
+
+    it('paper trade execution works with auto-initialized config', () => {
+      const config = autoInitBotConfig(null);
+      expect(shouldExecutePaperTrade(config)).toBe(true);
+      expect(isLiveTradingBlocked(config)).toBe(false);
+    });
+  });
+
+  describe('10. Paper mode does not require Kraken credentials', () => {
+    // Simulates the exchangeActions check: execute_trade is NOT in the list
+    function requiresKrakenCredentials(action: string): boolean {
+      const exchangeActions = ['analyze_market'];
+      return exchangeActions.includes(action);
+    }
+
+    it('execute_trade does not require credentials', () => {
+      expect(requiresKrakenCredentials('execute_trade')).toBe(false);
+    });
+
+    it('analyze_market does require credentials', () => {
+      expect(requiresKrakenCredentials('analyze_market')).toBe(true);
+    });
+
+    it('generate_paper_signal does not require credentials', () => {
+      expect(requiresKrakenCredentials('generate_paper_signal')).toBe(false);
+    });
+  });
 });

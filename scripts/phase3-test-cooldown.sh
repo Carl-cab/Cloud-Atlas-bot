@@ -47,12 +47,19 @@ echo ""
 # -----------------------------------------------
 # Trigger multiple rapid trade attempts
 # -----------------------------------------------
-SYMBOLS=("BTC/USD" "ETH/USD" "BTC/USD" "SOL/USD" "ETH/USD")
+SYMBOLS=("XBTUSD" "ETHUSD" "XBTUSD" "SOLUSD" "ETHUSD")
 COOLDOWN_TRIGGERED=false
 
 for i in "${!SYMBOLS[@]}"; do
   SYM="${SYMBOLS[$i]}"
   echo "--- Trade attempt $((i+1)): $SYM ---"
+
+  # Generate a signal first
+  curl -s "${SUPABASE_URL}/functions/v1/trading-bot" \
+    -H "Authorization: Bearer ${USER_JWT}" \
+    -H "Content-Type: application/json" \
+    -H "apikey: ${ANON_KEY}" \
+    -d "{\"action\": \"generate_paper_signal\", \"symbol\": \"${SYM}\"}" > /dev/null
 
   RESPONSE=$(curl -s -w "\n%{http_code}" \
     "${SUPABASE_URL}/functions/v1/trading-bot" \

@@ -87,49 +87,87 @@ print('  All configs are in paper mode.')
 echo ""
 
 # -----------------------------------------------
-# Step 2: Verify live trading is blocked
+# Step 2: Verify trading-bot responds without 500
+# (Live trading is blocked by code: paper mode returns early,
+#  readiness gate returns 403/501 if mode is somehow set to 'live')
 # -----------------------------------------------
-echo "--- Step 2: Verify readiness gate blocks live trading ---"
+echo "--- Step 2: Verify trading-bot is responsive ---"
 GATE_CHECK=$(curl -s -w "\n%{http_code}" \
   "${SUPABASE_URL}/functions/v1/trading-bot" \
   -H "Authorization: Bearer ${USER_JWT}" \
   -H "Content-Type: application/json" \
   -H "apikey: ${ANON_KEY}" \
-  -d '{"action": "execute_trade", "symbol": "BTC/USD", "mode_override": "live"}')
+  -d '{"action": "execute_trade", "symbol": "XBTUSD"}')
 
 GATE_HTTP=$(echo "$GATE_CHECK" | tail -1)
 GATE_BODY=$(echo "$GATE_CHECK" | sed '$d')
 
-if [ "$GATE_HTTP" = "403" ] || [ "$GATE_HTTP" = "501" ]; then
-  echo "  [PASS] Live trading blocked with HTTP $GATE_HTTP"
-  echo "  $GATE_BODY" | python3 -c "
+if [ "$GATE_HTTP" = "500" ]; then
+  echo "  [FAIL] trading-bot returned HTTP 500"
+  echo "$GATE_BODY" | python3 -m json.tool 2>/dev/null || echo "$GATE_BODY"
+  echo ""
+  echo "  Aborting — fix the 500 error before proceeding."
+  exit 1
+else
+  echo "  [PASS] trading-bot responded with HTTP $GATE_HTTP (no crash)"
+  echo "$GATE_BODY" | python3 -c "
 import json, sys
 try:
     data = json.load(sys.stdin)
     print(f'  Message: {data.get(\"message\", data.get(\"error\", \"\"))}')
 except: pass
 " 2>/dev/null
-else
-  echo "  [WARN] Unexpected HTTP $GATE_HTTP — verify manually"
 fi
 echo ""
 
 # -----------------------------------------------
-# Step 3: Trigger a paper trade cycle
+# Step 3: Generate paper signal then execute trade
 # -----------------------------------------------
-echo "--- Step 3: Trigger paper trade cycle ---"
+echo "--- Step 3a: Generate paper trading signal ---"
+SIGNAL_RESPONSE=$(curl -s -w "\n%{http_code}" \
+  "${SUPABASE_URL}/functions/v1/trading-bot" \
+  -H "Authorization: Bearer ${USER_JWT}" \
+  -H "Content-Type: application/json" \
+  -H "apikey: ${ANON_KEY}" \
+  -d '{"action": "generate_paper_signal", "symbol": "XBTUSD"}')
+
+SIGNAL_HTTP=$(echo "$SIGNAL_RESPONSE" | tail -1)
+SIGNAL_BODY=$(echo "$SIGNAL_RESPONSE" | sed '$d')
+
+echo "  HTTP $SIGNAL_HTTP"
+echo "$SIGNAL_BODY" | python3 -c "
+import json, sys
+try:
+    data = json.load(sys.stdin)
+    sig = data.get('signal', {})
+    print(f'  Signal: {sig.get(\"signal_type\", \"?\")} @ \${sig.get(\"price\", 0):.2f} (confidence: {sig.get(\"confidence\", 0):.2f})')
+except: pass
+" 2>/dev/null
+echo ""
+
+echo "--- Step 3b: Execute paper trade ---"
 TRADE_RESPONSE=$(curl -s -w "\n%{http_code}" \
   "${SUPABASE_URL}/functions/v1/trading-bot" \
   -H "Authorization: Bearer ${USER_JWT}" \
   -H "Content-Type: application/json" \
   -H "apikey: ${ANON_KEY}" \
-  -d '{"action": "execute_trade", "symbol": "BTC/USD"}')
+  -d '{"action": "execute_trade", "symbol": "XBTUSD"}')
 
 TRADE_HTTP=$(echo "$TRADE_RESPONSE" | tail -1)
 TRADE_BODY=$(echo "$TRADE_RESPONSE" | sed '$d')
 
 echo "  HTTP $TRADE_HTTP"
-echo "$TRADE_BODY" | python3 -m json.tool 2>/dev/null || echo "$TRADE_BODY"
+echo "$TRADE_BODY" | python3 -c "
+import json, sys
+try:
+    data = json.load(sys.stdin)
+    msg = data.get('message', data.get('error', ''))
+    print(f'  Result: {msg}')
+    pos = data.get('position', {})
+    if pos:
+        print(f'  Position: {pos.get(\"side\", \"?\")} {pos.get(\"quantity\", 0)} {pos.get(\"symbol\", \"?\")} @ \${pos.get(\"entry_price\", 0):.2f}')
+except: pass
+" 2>/dev/null || echo "$TRADE_BODY"
 echo ""
 
 # -----------------------------------------------

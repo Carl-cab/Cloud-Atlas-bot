@@ -51,7 +51,7 @@ TRADES=$(curl -s "${SUPABASE_URL}/rest/v1/trading_positions?select=id&status=neq
   -H "apikey: ${ANON_KEY}" \
   -H "Authorization: Bearer ${USER_JWT}" \
   -H "Prefer: count=exact" \
-  -I 2>/dev/null | grep -i content-range | grep -oP '\d+$' || echo "0")
+  -I 2>/dev/null | grep -i content-range | sed 's|.*/||' || echo "0")
 
 # Fallback: count from response body
 if [ "$TRADES" = "0" ] || [ -z "$TRADES" ]; then

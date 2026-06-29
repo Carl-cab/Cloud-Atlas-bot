@@ -70,7 +70,7 @@ TRADE_RESPONSE=$(curl -s -w "\n%{http_code}" \
   -H "Authorization: Bearer ${USER_JWT}" \
   -H "Content-Type: application/json" \
   -H "apikey: ${ANON_KEY}" \
-  -d '{"action": "execute_trade", "symbol": "BTC/USD"}')
+  -d '{"action": "execute_trade", "symbol": "XBTUSD"}')
 
 TRADE_HTTP=$(echo "$TRADE_RESPONSE" | tail -1)
 TRADE_BODY=$(echo "$TRADE_RESPONSE" | sed '$d')
@@ -112,13 +112,20 @@ echo ""
 # -----------------------------------------------
 # Step 4: Attempt trade (should succeed in paper mode)
 # -----------------------------------------------
+echo "--- Step 3b: Generate fresh signal ---"
+curl -s "${SUPABASE_URL}/functions/v1/trading-bot" \
+  -H "Authorization: Bearer ${USER_JWT}" \
+  -H "Content-Type: application/json" \
+  -H "apikey: ${ANON_KEY}" \
+  -d '{"action": "generate_paper_signal", "symbol": "XBTUSD"}' > /dev/null
+
 echo "--- Step 4: Attempt trade (expecting paper trade success) ---"
 TRADE2_RESPONSE=$(curl -s -w "\n%{http_code}" \
   "${SUPABASE_URL}/functions/v1/trading-bot" \
   -H "Authorization: Bearer ${USER_JWT}" \
   -H "Content-Type: application/json" \
   -H "apikey: ${ANON_KEY}" \
-  -d '{"action": "execute_trade", "symbol": "BTC/USD"}')
+  -d '{"action": "execute_trade", "symbol": "XBTUSD"}')
 
 TRADE2_HTTP=$(echo "$TRADE2_RESPONSE" | tail -1)
 TRADE2_BODY=$(echo "$TRADE2_RESPONSE" | sed '$d')
