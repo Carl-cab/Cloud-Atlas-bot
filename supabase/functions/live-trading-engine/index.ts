@@ -3,12 +3,26 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { applyRateLimit, rateLimitConfigs } from '../_shared/rateLimiter.ts';
 import { audit, AuditCategory, AuditSeverity, auditLog } from '../_shared/auditLogger.ts';
+import { useBrokerAdapters } from '../_shared/featureFlags.ts';
+import { BrokerRegistry } from '../_shared/broker/registry.ts';
+import { KrakenBrokerAdapter } from '../_shared/broker/adapters/kraken.ts';
+import { emitBrokerAudit } from '../_shared/broker/audit.ts';
+import type { BrokerCredentials } from '../_shared/broker/types.ts';
 
 // Service-role client used exclusively for audit logging (bypasses RLS)
 const supabaseServiceRole = createClient(
   Deno.env.get('SUPABASE_URL') ?? '',
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 );
+
+let _lteRegistry: BrokerRegistry | null = null;
+function getLTEBrokerRegistry(): BrokerRegistry {
+  if (!_lteRegistry) {
+    _lteRegistry = new BrokerRegistry();
+    _lteRegistry.register(new KrakenBrokerAdapter(), 10);
+  }
+  return _lteRegistry;
+}
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -448,6 +462,11 @@ class LiveTradingEngine {
     };
   }
 
+  async getKrakenCredentialsBridge(userId: string, userToken: string): Promise<BrokerCredentials> {
+    const creds = await this.getKrakenCredentials(userId, userToken);
+    return { brokerId: 'kraken', apiKey: creds.api_key, apiSecret: creds.private_key };
+  }
+
   private async storeOrder(orderData: any): Promise<void> {
     const { error } = await this.supabase
       .from('executed_trades')
@@ -588,45 +607,90 @@ serve(async (req) => {
       }
 
       case 'get_balance': {
+        if (useBrokerAdapters()) {
+          const registry = getLTEBrokerRegistry();
+          const krakenAdapter = registry.get('kraken');
+          if (!krakenAdapter) throw new Error('Kraken adapter not available');
+          await emitBrokerAudit(supabaseServiceRole, { userId: user.id, action: 'BROKER_SELECTED', brokerId: 'kraken', details: { action: 'get_balance' } });
+          const creds = await tradingEngine.getKrakenCredentialsBridge(params.user_id, token);
+          const balResult = await krakenAdapter.getBalances(creds);
+          if (!balResult.success) {
+            await emitBrokerAudit(supabaseServiceRole, { userId: user.id, action: 'BROKER_ADAPTER_FALLBACK', brokerId: 'kraken', details: { error: balResult.error } });
+            throw new Error(balResult.error ?? 'Balance fetch failed via adapter');
+          }
+          await emitBrokerAudit(supabaseServiceRole, { userId: user.id, action: 'BALANCE_FETCHED', brokerId: 'kraken', details: { totalEquityUsd: balResult.data?.totalEquityUsd } });
+          return new Response(JSON.stringify({ success: true, balance: balResult.data }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
         const balance = await tradingEngine.getAccountBalance(params.user_id, token);
-        
-        return new Response(JSON.stringify({
-          success: true,
-          balance
-        }), {
+        return new Response(JSON.stringify({ success: true, balance }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
       }
 
       case 'get_open_orders': {
+        if (useBrokerAdapters()) {
+          const registry = getLTEBrokerRegistry();
+          const krakenAdapter = registry.get('kraken');
+          if (!krakenAdapter) throw new Error('Kraken adapter not available');
+          await emitBrokerAudit(supabaseServiceRole, { userId: user.id, action: 'BROKER_SELECTED', brokerId: 'kraken', details: { action: 'get_open_orders' } });
+          const creds = await tradingEngine.getKrakenCredentialsBridge(params.user_id, token);
+          const ordersResult = await krakenAdapter.getOpenOrders(creds);
+          if (!ordersResult.success) {
+            await emitBrokerAudit(supabaseServiceRole, { userId: user.id, action: 'BROKER_ADAPTER_FALLBACK', brokerId: 'kraken', details: { error: ordersResult.error } });
+            throw new Error(ordersResult.error ?? 'Open orders fetch failed via adapter');
+          }
+          return new Response(JSON.stringify({ success: true, orders: ordersResult.data }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
         const orders = await tradingEngine.getOpenOrders(params.user_id, token);
-        
-        return new Response(JSON.stringify({
-          success: true,
-          orders
-        }), {
+        return new Response(JSON.stringify({ success: true, orders }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
       }
 
       case 'get_order_history': {
+        if (useBrokerAdapters()) {
+          const registry = getLTEBrokerRegistry();
+          const krakenAdapter = registry.get('kraken');
+          if (!krakenAdapter) throw new Error('Kraken adapter not available');
+          await emitBrokerAudit(supabaseServiceRole, { userId: user.id, action: 'BROKER_SELECTED', brokerId: 'kraken', details: { action: 'get_order_history' } });
+          const creds = await tradingEngine.getKrakenCredentialsBridge(params.user_id, token);
+          const histResult = await krakenAdapter.getClosedOrders(creds, params.start);
+          if (!histResult.success) {
+            await emitBrokerAudit(supabaseServiceRole, { userId: user.id, action: 'BROKER_ADAPTER_FALLBACK', brokerId: 'kraken', details: { error: histResult.error } });
+            throw new Error(histResult.error ?? 'Order history fetch failed via adapter');
+          }
+          return new Response(JSON.stringify({ success: true, history: histResult.data }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
         const history = await tradingEngine.getOrderHistory(params.user_id, params.start, token);
-        
-        return new Response(JSON.stringify({
-          success: true,
-          history
-        }), {
+        return new Response(JSON.stringify({ success: true, history }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
       }
 
       case 'get_market_price': {
+        if (useBrokerAdapters()) {
+          const registry = getLTEBrokerRegistry();
+          const krakenAdapter = registry.get('kraken');
+          if (!krakenAdapter) throw new Error('Kraken adapter not available');
+          await emitBrokerAudit(supabaseServiceRole, { userId: user.id, action: 'BROKER_SELECTED', brokerId: 'kraken', details: { action: 'get_market_price', symbol: params.symbol } });
+          const marketResult = await krakenAdapter.getMarketData(params.symbol);
+          if (!marketResult.success || !marketResult.data) {
+            await emitBrokerAudit(supabaseServiceRole, { userId: user.id, action: 'BROKER_ADAPTER_FALLBACK', brokerId: 'kraken', details: { symbol: params.symbol, error: marketResult.error } });
+            throw new Error(marketResult.error ?? 'Market price fetch failed via adapter');
+          }
+          await emitBrokerAudit(supabaseServiceRole, { userId: user.id, action: 'MARKET_DATA_FETCHED', brokerId: 'kraken', details: { symbol: params.symbol, price: marketResult.data.lastPrice } });
+          return new Response(JSON.stringify({ success: true, price: marketResult.data.lastPrice }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
         const price = await tradingEngine.getMarketPrice(params.symbol);
-        
-        return new Response(JSON.stringify({
-          success: true,
-          price
-        }), {
+        return new Response(JSON.stringify({ success: true, price }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
       }

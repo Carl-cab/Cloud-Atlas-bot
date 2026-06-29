@@ -27,6 +27,10 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { audit, AuditCategory, AuditSeverity, auditLog } from '../_shared/auditLogger.ts';
 import { applyRateLimit, rateLimitConfigs } from '../_shared/rateLimiter.ts';
+import { useBrokerAdapters } from '../_shared/featureFlags.ts';
+import { BrokerRegistry } from '../_shared/broker/registry.ts';
+import { KrakenBrokerAdapter } from '../_shared/broker/adapters/kraken.ts';
+import { emitBrokerAudit } from '../_shared/broker/audit.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -42,6 +46,15 @@ const supabaseAdmin = createClient(
   Deno.env.get('SUPABASE_URL') ?? '',
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 );
+
+let _reconRegistry: BrokerRegistry | null = null;
+function getReconBrokerRegistry(): BrokerRegistry {
+  if (!_reconRegistry) {
+    _reconRegistry = new BrokerRegistry();
+    _reconRegistry.register(new KrakenBrokerAdapter(), 10);
+  }
+  return _reconRegistry;
+}
 
 // ---------------------------------------------------------------------------
 // Helper: fetch per-user Kraken credentials from secure-credentials
@@ -224,6 +237,9 @@ serve(async (req) => {
         const credentials = await getKrakenCredentials(userId, token);
         if (!credentials) {
           // No credentials = paper mode without exchange connection; skip gracefully
+          if (useBrokerAdapters()) {
+            await emitBrokerAudit(supabaseAdmin, { userId, action: 'RECONCILIATION_SKIPPED', brokerId: 'kraken', details: { reason: 'no credentials (paper mode)' } });
+          }
           await supabaseAdmin.from('reconciliation_log').insert({
             user_id:               userId,
             kraken_balance_usd:    null,
@@ -239,20 +255,41 @@ serve(async (req) => {
           }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
 
+        if (useBrokerAdapters()) {
+          await emitBrokerAudit(supabaseAdmin, { userId, action: 'RECONCILIATION_STARTED', brokerId: 'kraken', details: { internal_balance: internalBalance } });
+        }
+
         // 3. Call Kraken Balance endpoint
         let krakenBalanceUsd: number;
         try {
-          const krakenResp = await krakenPrivateRequest(
-            'Balance', {}, credentials.api_key, credentials.private_key
-          );
+          if (useBrokerAdapters()) {
+            // ADAPTER PATH: Use KrakenBrokerAdapter for balance fetch
+            const registry = getReconBrokerRegistry();
+            const krakenAdapter = registry.get('kraken');
+            if (!krakenAdapter) throw new Error('Kraken adapter not available');
+            await emitBrokerAudit(supabaseAdmin, { userId, action: 'BROKER_SELECTED', brokerId: 'kraken', details: { action: 'reconciliation_balance' } });
+            const adapterCreds = { brokerId: 'kraken', apiKey: credentials.api_key, apiSecret: credentials.private_key };
+            const balResult = await krakenAdapter.getBalances(adapterCreds);
+            if (!balResult.success || !balResult.data) {
+              await emitBrokerAudit(supabaseAdmin, { userId, action: 'BROKER_ADAPTER_FALLBACK', brokerId: 'kraken', details: { error: balResult.error } });
+              throw new Error(balResult.error ?? 'Balance fetch failed via adapter');
+            }
+            await emitBrokerAudit(supabaseAdmin, { userId, action: 'BALANCE_FETCHED', brokerId: 'kraken', details: { totalEquityUsd: balResult.data.totalEquityUsd } });
+            krakenBalanceUsd = balResult.data.totalEquityUsd;
+          } else {
+            // LEGACY PATH: Direct Kraken API call
+            const krakenResp = await krakenPrivateRequest(
+              'Balance', {}, credentials.api_key, credentials.private_key
+            );
 
-          if (krakenResp.error && Array.isArray(krakenResp.error) && krakenResp.error.length > 0) {
-            throw new Error(`Kraken API error: ${krakenResp.error.join(', ')}`);
+            if (krakenResp.error && Array.isArray(krakenResp.error) && krakenResp.error.length > 0) {
+              throw new Error(`Kraken API error: ${krakenResp.error.join(', ')}`);
+            }
+
+            krakenBalanceUsd = extractKrakenUsdBalance(
+              krakenResp.result as Record<string, string> ?? {}
+            );
           }
-
-          krakenBalanceUsd = extractKrakenUsdBalance(
-            krakenResp.result as Record<string, string> ?? {}
-          );
         } catch (krakenError) {
           await supabaseAdmin.from('reconciliation_log').insert({
             user_id:               userId,
@@ -367,6 +404,10 @@ serve(async (req) => {
           severity: AuditSeverity.INFO,
           details: { internal_balance: internalBalance, kraken_balance: krakenBalanceUsd, discrepancy: discrepancyRaw }
         });
+
+        if (useBrokerAdapters()) {
+          await emitBrokerAudit(supabaseAdmin, { userId, action: 'RECONCILIATION_COMPLETED', brokerId: 'kraken', details: { status: 'ok', internal_balance: internalBalance, kraken_balance: krakenBalanceUsd, discrepancy: discrepancyRaw } });
+        }
 
         return new Response(JSON.stringify({
           success: true,

@@ -14,17 +14,22 @@ export type BrokerAuditAction =
   | 'BROKER_HEALTHCHECK'
   | 'BROKER_CONNECT'
   | 'BROKER_FAILOVER'
+  | 'BROKER_ADAPTER_FALLBACK'
   | 'ORDER_SUBMITTED'
   | 'ORDER_FILLED'
   | 'ORDER_CANCELLED'
   | 'ORDER_REJECTED'
   | 'ORDER_FAILED'
   | 'ORDER_MODIFIED'
+  | 'ORDER_SIMULATED'
   | 'POSITION_OPENED'
   | 'POSITION_CLOSED'
   | 'BALANCE_FETCHED'
   | 'MARKET_DATA_FETCHED'
-  | 'CREDENTIAL_VALIDATED';
+  | 'CREDENTIAL_VALIDATED'
+  | 'RECONCILIATION_STARTED'
+  | 'RECONCILIATION_SKIPPED'
+  | 'RECONCILIATION_COMPLETED';
 
 export interface BrokerAuditEvent {
   userId: string | null;
@@ -42,17 +47,22 @@ export async function emitBrokerAudit(
     BROKER_HEALTHCHECK: AuditSeverity.DEBUG,
     BROKER_CONNECT: AuditSeverity.INFO,
     BROKER_FAILOVER: AuditSeverity.WARNING,
+    BROKER_ADAPTER_FALLBACK: AuditSeverity.WARNING,
     ORDER_SUBMITTED: AuditSeverity.INFO,
     ORDER_FILLED: AuditSeverity.INFO,
     ORDER_CANCELLED: AuditSeverity.INFO,
     ORDER_REJECTED: AuditSeverity.WARNING,
     ORDER_FAILED: AuditSeverity.CRITICAL,
     ORDER_MODIFIED: AuditSeverity.INFO,
+    ORDER_SIMULATED: AuditSeverity.INFO,
     POSITION_OPENED: AuditSeverity.INFO,
     POSITION_CLOSED: AuditSeverity.INFO,
     BALANCE_FETCHED: AuditSeverity.DEBUG,
     MARKET_DATA_FETCHED: AuditSeverity.DEBUG,
     CREDENTIAL_VALIDATED: AuditSeverity.INFO,
+    RECONCILIATION_STARTED: AuditSeverity.INFO,
+    RECONCILIATION_SKIPPED: AuditSeverity.INFO,
+    RECONCILIATION_COMPLETED: AuditSeverity.INFO,
   };
 
   await auditLog(supabase, {

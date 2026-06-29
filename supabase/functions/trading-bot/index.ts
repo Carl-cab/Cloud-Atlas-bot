@@ -3,6 +3,11 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { applyRateLimit, rateLimitConfigs } from '../_shared/rateLimiter.ts';
 import { audit, auditLog, AuditCategory, AuditSeverity } from '../_shared/auditLogger.ts';
+import { useBrokerAdapters } from '../_shared/featureFlags.ts';
+import { BrokerRegistry } from '../_shared/broker/registry.ts';
+import { PaperBrokerAdapter } from '../_shared/broker/adapters/paper.ts';
+import { KrakenBrokerAdapter } from '../_shared/broker/adapters/kraken.ts';
+import { emitBrokerAudit } from '../_shared/broker/audit.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -19,6 +24,20 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey);
 const TELEGRAM_BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN')!;
 const TELEGRAM_CHAT_ID = Deno.env.get('TELEGRAM_CHAT_ID')!;
 const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+
+// Broker adapter registry — initialized lazily on first use when feature flag is on
+let _brokerRegistry: BrokerRegistry | null = null;
+function getBrokerRegistry(): BrokerRegistry {
+  if (!_brokerRegistry) {
+    _brokerRegistry = new BrokerRegistry();
+    const krakenAdapter = new KrakenBrokerAdapter();
+    const paperAdapter = new PaperBrokerAdapter();
+    paperAdapter.setMarketDataProvider((symbol) => krakenAdapter.getMarketData(symbol));
+    _brokerRegistry.register(krakenAdapter, 10);
+    _brokerRegistry.register(paperAdapter, 50);
+  }
+  return _brokerRegistry;
+}
 
 /**
  * PHASE 0 FIX: Fetch per-user Kraken credentials from the secure-credentials edge function.
@@ -844,28 +863,46 @@ serve(async (req) => {
     const notificationManager = new NotificationManager();
 
     switch (action) {
-      case 'analyze_market':
-        // Fetch market data
-        if (!krakenAPI) throw new Error('Kraken API not initialized for this action');
-        const ohlcData = await krakenAPI.getOHLCData(symbol);
-        const marketData = ohlcData.result[Object.keys(ohlcData.result)[0]];
-        
-        // Store market data
-        const formattedData = marketData.slice(-100).map((candle: any) => ({
-          symbol,
-          timestamp: new Date(candle[0] * 1000).toISOString(),
-          timeframe: '15m',
-          open: parseFloat(candle[1]),
-          high: parseFloat(candle[2]),
-          low: parseFloat(candle[3]),
-          close: parseFloat(candle[4]),
-          volume: parseFloat(candle[6])
-        }));
-        
+      case 'analyze_market': {
+        let formattedData: any[];
+        let analyzeMarketData: any[];
+
+        if (useBrokerAdapters()) {
+          // ADAPTER PATH: Use KrakenBrokerAdapter for OHLC data
+          const registry = getBrokerRegistry();
+          const krakenAdapter = registry.get('kraken');
+          if (!krakenAdapter) throw new Error('Kraken adapter not available');
+          await emitBrokerAudit(supabase, { userId, action: 'BROKER_SELECTED', brokerId: 'kraken', details: { action: 'analyze_market', symbol } });
+          const histResult = await krakenAdapter.getHistoricalData(symbol, 15, 100);
+          if (!histResult.success || !histResult.data) {
+            await emitBrokerAudit(supabase, { userId, action: 'BROKER_ADAPTER_FALLBACK', brokerId: 'kraken', details: { symbol, error: histResult.error } });
+            throw new Error(histResult.error ?? 'Failed to fetch OHLC via adapter');
+          }
+          await emitBrokerAudit(supabase, { userId, action: 'MARKET_DATA_FETCHED', brokerId: 'kraken', details: { symbol, candles: histResult.data.length } });
+          formattedData = histResult.data.map(c => ({ symbol, timestamp: c.timestamp, timeframe: '15m', open: c.open, high: c.high, low: c.low, close: c.close, volume: c.volume }));
+          analyzeMarketData = histResult.data;
+        } else {
+          // LEGACY PATH: Direct Kraken API
+          if (!krakenAPI) throw new Error('Kraken API not initialized for this action');
+          const ohlcData = await krakenAPI.getOHLCData(symbol);
+          const rawData = ohlcData.result[Object.keys(ohlcData.result)[0]];
+          formattedData = rawData.slice(-100).map((candle: any) => ({
+            symbol,
+            timestamp: new Date(candle[0] * 1000).toISOString(),
+            timeframe: '15m',
+            open: parseFloat(candle[1]),
+            high: parseFloat(candle[2]),
+            low: parseFloat(candle[3]),
+            close: parseFloat(candle[4]),
+            volume: parseFloat(candle[6])
+          }));
+          analyzeMarketData = formattedData;
+        }
+
         await supabase.from('market_data').upsert(formattedData);
-        
+
         // Detect regime
-        const regime = regimeDetector.detectRegime(marketData);
+        const regime = regimeDetector.detectRegime(analyzeMarketData);
         await supabase.from('market_regimes').insert({
           symbol,
           timestamp: new Date().toISOString(),
@@ -874,9 +911,9 @@ serve(async (req) => {
           trend_strength: regime.trend_strength,
           volatility: regime.volatility
         });
-        
+
         // Generate trading signal
-        const signal = await mlEngine.generateSignal(symbol, marketData, regime);
+        const signal = await mlEngine.generateSignal(symbol, analyzeMarketData, regime);
         
         return new Response(JSON.stringify({
           regime,
@@ -885,6 +922,7 @@ serve(async (req) => {
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
+      }
 
       case 'generate_signal':
         
@@ -1226,6 +1264,10 @@ serve(async (req) => {
             details: { symbol, side: latestSignal.signal_type, quantity: riskEval.positionSize, price: latestSignal.price, position_id: posData.id },
           });
 
+          if (useBrokerAdapters()) {
+            await emitBrokerAudit(supabase, { userId, action: 'ORDER_SIMULATED', brokerId: 'paper', details: { symbol, side: latestSignal.signal_type, quantity: riskEval.positionSize, price: latestSignal.price, position_id: posData.id } });
+          }
+
           try { await notificationManager.notifyTrade(latestSignal, true, 'Paper trade executed'); } catch (nErr) { console.error('[execute_trade] Notification error (non-fatal):', nErr); }
 
           return new Response(JSON.stringify({
@@ -1289,18 +1331,40 @@ serve(async (req) => {
       case 'generate_paper_signal': {
         console.log('[generate_paper_signal] Starting for symbol:', symbol);
         let currentPrice: number;
-        try {
-          const tickerResp = await fetch(`https://api.kraken.com/0/public/Ticker?pair=${symbol}`);
-          const tickerData = await tickerResp.json();
-          const pairKey = Object.keys(tickerData.result || {})[0];
-          currentPrice = pairKey ? parseFloat(tickerData.result[pairKey].c[0]) : 0;
-          console.log('[generate_paper_signal] Kraken price:', currentPrice);
-        } catch (fetchErr) {
-          console.error('[generate_paper_signal] Kraken fetch failed:', fetchErr);
-          currentPrice = 0;
+
+        if (useBrokerAdapters()) {
+          // ADAPTER PATH: Use PaperBrokerAdapter for market data (no Kraken private calls)
+          const registry = getBrokerRegistry();
+          const paperAdapter = registry.get('paper');
+          if (paperAdapter) {
+            await emitBrokerAudit(supabase, { userId, action: 'BROKER_SELECTED', brokerId: 'paper', details: { action: 'generate_paper_signal', symbol } });
+            const marketResult = await paperAdapter.getMarketData(symbol);
+            currentPrice = marketResult.success && marketResult.data ? marketResult.data.lastPrice : 0;
+            if (currentPrice > 0) {
+              await emitBrokerAudit(supabase, { userId, action: 'MARKET_DATA_FETCHED', brokerId: 'paper', details: { symbol, price: currentPrice } });
+            }
+            console.log('[generate_paper_signal] Adapter price:', currentPrice);
+          } else {
+            currentPrice = 0;
+          }
+        } else {
+          // LEGACY PATH: Direct Kraken public API call
+          try {
+            const tickerResp = await fetch(`https://api.kraken.com/0/public/Ticker?pair=${symbol}`);
+            const tickerData = await tickerResp.json();
+            const pairKey = Object.keys(tickerData.result || {})[0];
+            currentPrice = pairKey ? parseFloat(tickerData.result[pairKey].c[0]) : 0;
+            console.log('[generate_paper_signal] Kraken price:', currentPrice);
+          } catch (fetchErr) {
+            console.error('[generate_paper_signal] Kraken fetch failed:', fetchErr);
+            currentPrice = 0;
+          }
         }
 
         if (!currentPrice || isNaN(currentPrice)) {
+          if (useBrokerAdapters()) {
+            await emitBrokerAudit(supabase, { userId, action: 'BROKER_ADAPTER_FALLBACK', brokerId: 'paper', details: { symbol, reason: 'market data unavailable, using synthetic price' } });
+          }
           const basePrices: Record<string, number> = { 'XBTUSD': 65000, 'ETHUSD': 3500, 'SOLUSD': 150 };
           const basePrice = basePrices[symbol] ?? basePrices['XBTUSD'] ?? 65000;
           const variation = (Math.random() - 0.5) * 0.02;
