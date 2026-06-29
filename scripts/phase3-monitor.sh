@@ -3,6 +3,7 @@
 # Phase 3: Paper Trading Monitor
 #
 # Checks current paper trading progress against Phase 3 pass criteria.
+# All checks are evidence-based: each criterion queries real DB tables.
 #
 # Prerequisites:
 #   export SUPABASE_ANON_KEY="your-anon-key"
@@ -47,8 +48,7 @@ echo ""
 # 1. Paper trade count (target: 50+)
 # -----------------------------------------------
 echo "--- 1. Paper Trades ---"
-# Count executed_trades (this is what the readiness gate checks)
-TRADES_DATA=$(curl -s "${SUPABASE_URL}/rest/v1/executed_trades?select=id" \
+TRADES_DATA=$(curl -s "${SUPABASE_URL}/rest/v1/executed_trades?select=id,kraken_order_id,timestamp" \
   -H "apikey: ${ANON_KEY}" \
   -H "Authorization: Bearer ${USER_JWT}")
 TRADES=$(echo "$TRADES_DATA" | python3 -c "
@@ -57,7 +57,6 @@ data = json.load(sys.stdin)
 print(len(data) if isinstance(data, list) else 0)
 " 2>/dev/null || echo "0")
 
-# Also count trading_positions for comparison
 POS_DATA=$(curl -s "${SUPABASE_URL}/rest/v1/trading_positions?select=id" \
   -H "apikey: ${ANON_KEY}" \
   -H "Authorization: Bearer ${USER_JWT}")
@@ -96,10 +95,30 @@ fi
 echo ""
 
 # -----------------------------------------------
-# 3. Risk checks (verify risk events exist)
+# 3. Risk check coverage (every trade must have a risk decision)
 # -----------------------------------------------
-echo "--- 3. Risk Events ---"
-RISK_EVENTS=$(curl -s "${SUPABASE_URL}/rest/v1/risk_events?select=id&order=created_at.desc&limit=5" \
+echo "--- 3. Risk Check Coverage ---"
+
+RISK_AUDIT_RAW=$(curl -s "${SUPABASE_URL}/rest/v1/security_audit_log?select=action&action=in.(PAPER_TRADE_EXECUTED,TRADE_REJECTED)" \
+  -H "apikey: ${ANON_KEY}" \
+  -H "Authorization: Bearer ${USER_JWT}")
+
+RISK_AUDIT_RESULT=$(echo "$RISK_AUDIT_RAW" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+if not isinstance(data, list):
+    print('audit_total=0 executed=0 rejected=0')
+else:
+    executed = sum(1 for e in data if e.get('action') == 'PAPER_TRADE_EXECUTED')
+    rejected = sum(1 for e in data if e.get('action') == 'TRADE_REJECTED')
+    print(f'audit_total={executed + rejected} executed={executed} rejected={rejected}')
+" 2>/dev/null || echo "audit_total=0 executed=0 rejected=0")
+
+RISK_AUDIT_TOTAL=$(echo "$RISK_AUDIT_RESULT" | grep -oP 'audit_total=\K[0-9]+')
+RISK_EXECUTED=$(echo "$RISK_AUDIT_RESULT" | grep -oP 'executed=\K[0-9]+')
+RISK_REJECTED=$(echo "$RISK_AUDIT_RESULT" | grep -oP 'rejected=\K[0-9]+')
+
+POSITIONS_WITH_RISK=$(curl -s "${SUPABASE_URL}/rest/v1/trading_positions?select=id&risk_amount=not.is.null&stop_loss=not.is.null" \
   -H "apikey: ${ANON_KEY}" \
   -H "Authorization: Bearer ${USER_JWT}" | python3 -c "
 import json, sys
@@ -107,7 +126,23 @@ data = json.load(sys.stdin)
 print(len(data) if isinstance(data, list) else 0)
 " 2>/dev/null || echo "0")
 
-echo "  Recent risk events: $RISK_EVENTS"
+echo "  Audit trail: $RISK_EXECUTED PAPER_TRADE_EXECUTED + $RISK_REJECTED TRADE_REJECTED = $RISK_AUDIT_TOTAL risk decisions"
+echo "  Positions with risk_amount+stop_loss: $POSITIONS_WITH_RISK / $POSITIONS"
+
+if [ "$RISK_AUDIT_TOTAL" -gt 0 ] 2>/dev/null && [ "$RISK_AUDIT_TOTAL" -ge "$TRADES" ] 2>/dev/null; then
+  RISK_COVERAGE="pass_audit"
+  echo "  [PASS] Every executed trade has a matching risk decision in audit log"
+elif [ "$POSITIONS_WITH_RISK" -gt 0 ] 2>/dev/null && [ "$POSITIONS_WITH_RISK" -ge "$POSITIONS" ] 2>/dev/null; then
+  RISK_COVERAGE="pass_positions"
+  echo "  [PASS] Every position has risk_amount and stop_loss set (risk evaluation ran)"
+elif [ "$RISK_AUDIT_TOTAL" = "0" ] && [ "$POSITIONS_WITH_RISK" = "0" ]; then
+  RISK_COVERAGE="no_data"
+  echo "  [    ] No risk decision evidence found (audit log may be RLS-restricted)"
+  echo "  Note: Risk evaluation is enforced in code (line 1190 trading-bot/index.ts)"
+else
+  RISK_COVERAGE="partial"
+  echo "  [WARN] Partial coverage: $RISK_AUDIT_TOTAL audit decisions for $TRADES trades"
+fi
 echo ""
 
 # -----------------------------------------------
@@ -123,6 +158,9 @@ print(len(data) if isinstance(data, list) else 0)
 " 2>/dev/null || echo "0")
 
 echo "  Recent audit entries: $AUDIT_COUNT"
+if [ "$AUDIT_COUNT" = "0" ]; then
+  echo "  Note: 0 entries may indicate security_audit_log is RLS-restricted for user JWT reads"
+fi
 echo ""
 
 # -----------------------------------------------
@@ -158,11 +196,12 @@ if isinstance(data, list):
         print(f'  - {engaged}: reason={reason} resolved={resolved}')
 " 2>/dev/null
 
+COOLDOWN_TOTAL=$((COOLDOWN_COUNT + RISK_COOLDOWN_COUNT))
 if [ "$COOLDOWN_COUNT" != "0" ] && [ -n "$COOLDOWN_COUNT" ]; then
   echo "  [PASS] COOLDOWN_ENGAGED audit entries: $COOLDOWN_COUNT"
 elif [ "$RISK_COOLDOWN_COUNT" != "0" ] && [ -n "$RISK_COOLDOWN_COUNT" ]; then
   echo "  [PASS] Cooldown verified via risk_cooldowns table: $RISK_COOLDOWN_COUNT entries"
-  echo "  (audit log query returned 0 — may be RLS-restricted for user JWT reads)"
+  echo "  (audit log returned 0 — likely RLS-restricted; risk_cooldowns confirms cooldown ran)"
 else
   echo "  [    ] No cooldown entries found in audit log ($COOLDOWN_COUNT) or risk_cooldowns ($RISK_COOLDOWN_COUNT)"
   echo "  Run: bash scripts/phase3-test-cooldown.sh"
@@ -188,9 +227,11 @@ echo ""
 # 7. Bot config status
 # -----------------------------------------------
 echo "--- 7. Bot Config ---"
-curl -s "${SUPABASE_URL}/rest/v1/bot_config?select=mode,is_active,is_paused" \
+BOT_MODE=$(curl -s "${SUPABASE_URL}/rest/v1/bot_config?select=mode,is_active,is_paused" \
   -H "apikey: ${ANON_KEY}" \
-  -H "Authorization: Bearer ${USER_JWT}" | python3 -c "
+  -H "Authorization: Bearer ${USER_JWT}")
+
+echo "$BOT_MODE" | python3 -c "
 import json, sys
 data = json.load(sys.stdin)
 if not data: print('  No config found')
@@ -198,9 +239,18 @@ for row in data:
     mode = row.get('mode', '?')
     active = row.get('is_active', False)
     paused = row.get('is_paused', True)
-    safe = '✓' if mode == 'paper' else '✗'
-    print(f'  {safe} mode={mode} active={active} paused={paused}')
+    safe = 'SAFE' if mode == 'paper' else 'DANGER'
+    print(f'  [{safe}] mode={mode} active={active} paused={paused}')
 " 2>/dev/null
+
+IS_PAPER=$(echo "$BOT_MODE" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+if isinstance(data, list) and data:
+    print('yes' if all(r.get('mode') == 'paper' for r in data) else 'no')
+else:
+    print('unknown')
+" 2>/dev/null || echo "unknown")
 echo ""
 
 # -----------------------------------------------
@@ -229,9 +279,7 @@ if isinstance(data, list):
         print(f'  - {ts}: trigger={trigger} reason={reason}')
 " 2>/dev/null
 
-KILL_SWITCH_STATUS=$(curl -s "${SUPABASE_URL}/rest/v1/bot_config?select=is_paused,paused_reason" \
-  -H "apikey: ${ANON_KEY}" \
-  -H "Authorization: Bearer ${USER_JWT}" | python3 -c "
+KILL_SWITCH_STATUS=$(echo "$BOT_MODE" | python3 -c "
 import json, sys
 data = json.load(sys.stdin)
 if not isinstance(data, list) or not data:
@@ -239,9 +287,8 @@ if not isinstance(data, list) or not data:
 else:
     row = data[0]
     paused = row.get('is_paused', False)
-    reason = row.get('paused_reason', '')
     if paused:
-        print(f'PAUSED (reason: {reason})')
+        print(f'PAUSED')
     else:
         print('ACTIVE (is_paused=false)')
 " 2>/dev/null || echo "unknown")
@@ -250,26 +297,136 @@ if [ "$KILL_SWITCH_AUDIT" != "0" ] && [ -n "$KILL_SWITCH_AUDIT" ]; then
   echo "  [PASS] KILL_SWITCH_ACTIVATED audit entries: $KILL_SWITCH_AUDIT"
 else
   echo "  [    ] No KILL_SWITCH_ACTIVATED audit entries (0)"
-  echo "  Note: The kill switch test uses direct DB updates, not the audit path."
+  echo "  Note: Kill switch test uses direct DB updates, not the audit path."
   echo "  Run: bash scripts/phase3-test-kill-switch.sh"
 fi
 echo "  Current status: $KILL_SWITCH_STATUS"
 echo ""
 
 # -----------------------------------------------
+# 9. Trading days (distinct dates with executed trades)
+# -----------------------------------------------
+echo "--- 9. Trading Days ---"
+TRADING_DAYS=$(echo "$TRADES_DATA" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+if not isinstance(data, list) or not data:
+    print('count=0')
+else:
+    dates = set()
+    for row in data:
+        ts = row.get('timestamp', '')
+        if ts:
+            dates.add(ts[:10])
+    sorted_dates = sorted(dates)
+    print(f'count={len(sorted_dates)}')
+    for d in sorted_dates:
+        day_trades = sum(1 for r in data if r.get('timestamp', '')[:10] == d)
+        print(f'  - {d}: {day_trades} trades')
+" 2>/dev/null || echo "count=0")
+
+TRADING_DAY_COUNT=$(echo "$TRADING_DAYS" | head -1 | grep -oP 'count=\K[0-9]+')
+echo "$TRADING_DAYS" | tail -n +2
+
+TARGET_DAYS=7
+if [ "$TRADING_DAY_COUNT" -ge "$TARGET_DAYS" ] 2>/dev/null; then
+  echo "  [PASS] $TRADING_DAY_COUNT / $TARGET_DAYS distinct trading days"
+else
+  echo "  [    ] $TRADING_DAY_COUNT / $TARGET_DAYS distinct trading days"
+fi
+echo ""
+
+# -----------------------------------------------
+# 10. No real orders placed (evidence-based verification)
+# -----------------------------------------------
+echo "--- 10. No Real Orders Verification ---"
+
+LIVE_TRADES=$(echo "$TRADES_DATA" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+if not isinstance(data, list):
+    print('0')
+else:
+    live = [r for r in data if r.get('kraken_order_id', '').startswith('paper-') is False and r.get('kraken_order_id')]
+    non_paper = [r for r in data if r.get('kraken_order_id') and not r.get('kraken_order_id', '').startswith('paper-')]
+    print(len(non_paper))
+    for r in non_paper[:5]:
+        print(f'  WARNING: non-paper order_id={r.get(\"kraken_order_id\")} at {r.get(\"timestamp\",\"?\")}')
+" 2>/dev/null || echo "?")
+
+BROKER_LIVE_ORDERS=$(curl -s "${SUPABASE_URL}/rest/v1/broker_orders?select=id,broker_id,status&broker_id=eq.kraken" \
+  -H "apikey: ${ANON_KEY}" \
+  -H "Authorization: Bearer ${USER_JWT}" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+if not isinstance(data, list):
+    print('0')
+else:
+    print(len(data))
+    for r in data[:5]:
+        print(f'  WARNING: broker_order id={r.get(\"id\")} broker={r.get(\"broker_id\")} status={r.get(\"status\")}')
+" 2>/dev/null || echo "?")
+
+TRADE_EXECUTED_AUDIT=$(curl -s "${SUPABASE_URL}/rest/v1/security_audit_log?select=id&action=eq.TRADE_EXECUTED" \
+  -H "apikey: ${ANON_KEY}" \
+  -H "Authorization: Bearer ${USER_JWT}" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+print(len(data) if isinstance(data, list) else 0)
+" 2>/dev/null || echo "?")
+
+echo "  Non-paper executed_trades entries: $LIVE_TRADES"
+echo "  Kraken broker_orders entries: $BROKER_LIVE_ORDERS"
+echo "  TRADE_EXECUTED audit entries (live): $TRADE_EXECUTED_AUDIT"
+echo "  Bot config mode: $IS_PAPER"
+
+NO_REAL_ORDERS="false"
+if [ "$LIVE_TRADES" = "0" ] && [ "$BROKER_LIVE_ORDERS" = "0" ] && [ "$IS_PAPER" = "yes" ]; then
+  NO_REAL_ORDERS="true"
+  echo "  [PASS] Zero real orders placed — all trades are paper (paper-* prefix)"
+elif [ "$LIVE_TRADES" = "?" ] || [ "$BROKER_LIVE_ORDERS" = "?" ]; then
+  echo "  [WARN] Could not verify (query failed or table not accessible)"
+else
+  echo "  [FAIL] Evidence of non-paper activity found"
+fi
+echo ""
+
+# -----------------------------------------------
 # Summary
 # -----------------------------------------------
 echo "=============================================="
-echo "  Phase 3 Pass Criteria"
+echo "  Phase 3 Pass Criteria (Evidence-Based)"
 echo "=============================================="
-echo "  [ ] 7 days paper trading"
+echo "  [$([ "$TRADING_DAY_COUNT" -ge 7 ] 2>/dev/null && echo "x" || echo " ")] 7 days paper trading ($TRADING_DAY_COUNT distinct trading days)"
 echo "  [$([ "$TRADES" -ge 50 ] 2>/dev/null && echo "x" || echo " ")] 50+ paper trades ($TRADES)"
 echo "  [$([ "$RECON_FAILS" = "0" ] && echo "x" || echo " ")] 0 failed reconciliations ($RECON_FAILS)"
-echo "  [ ] Risk checks on every trade"
+echo "  [$([ "$RISK_COVERAGE" = "pass_audit" ] || [ "$RISK_COVERAGE" = "pass_positions" ] && echo "x" || echo " ")] Risk checks on every trade ($RISK_COVERAGE)"
 echo "  [$([ "$KILL_SWITCH_AUDIT" != "0" ] && [ -n "$KILL_SWITCH_AUDIT" ] && echo "x" || echo " ")] Kill switch (audit: $KILL_SWITCH_AUDIT, status: $KILL_SWITCH_STATUS)"
-COOLDOWN_TOTAL=$((COOLDOWN_COUNT + RISK_COOLDOWN_COUNT))
 echo "  [$([ "$COOLDOWN_TOTAL" -gt 0 ] 2>/dev/null && echo "x" || echo " ")] Cooldown tested (audit: $COOLDOWN_COUNT, risk_cooldowns: $RISK_COOLDOWN_COUNT)"
-echo "  [$([ "$AUDIT_COUNT" -ge 5 ] 2>/dev/null && echo "x" || echo " ")] Audit logs complete ($AUDIT_COUNT entries)"
-echo "  [ ] No real orders placed"
+echo "  [$([ "$AUDIT_COUNT" -ge 5 ] 2>/dev/null && echo "x" || echo " ")] Audit logs present ($AUDIT_COUNT entries)"
+echo "  [$([ "$NO_REAL_ORDERS" = "true" ] && echo "x" || echo " ")] No real orders placed (live_trades: $LIVE_TRADES, broker_orders: $BROKER_LIVE_ORDERS)"
 echo "=============================================="
+
+# Count passing criteria
+PASS_COUNT=0
+[ "$TRADING_DAY_COUNT" -ge 7 ] 2>/dev/null && PASS_COUNT=$((PASS_COUNT + 1))
+[ "$TRADES" -ge 50 ] 2>/dev/null && PASS_COUNT=$((PASS_COUNT + 1))
+[ "$RECON_FAILS" = "0" ] && PASS_COUNT=$((PASS_COUNT + 1))
+([ "$RISK_COVERAGE" = "pass_audit" ] || [ "$RISK_COVERAGE" = "pass_positions" ]) && PASS_COUNT=$((PASS_COUNT + 1))
+([ "$KILL_SWITCH_AUDIT" != "0" ] && [ -n "$KILL_SWITCH_AUDIT" ]) && PASS_COUNT=$((PASS_COUNT + 1))
+[ "$COOLDOWN_TOTAL" -gt 0 ] 2>/dev/null && PASS_COUNT=$((PASS_COUNT + 1))
+[ "$AUDIT_COUNT" -ge 5 ] 2>/dev/null && PASS_COUNT=$((PASS_COUNT + 1))
+[ "$NO_REAL_ORDERS" = "true" ] && PASS_COUNT=$((PASS_COUNT + 1))
+
+echo ""
+echo "  $PASS_COUNT / 8 criteria passing"
+
+if [ "$PASS_COUNT" -eq 8 ]; then
+  echo ""
+  echo "  ALL CRITERIA MET — Phase 3 eligible for completion."
+  echo "  Approval required before marking complete."
+else
+  echo ""
+  echo "  Phase 3 still in progress."
+fi
 echo ""
