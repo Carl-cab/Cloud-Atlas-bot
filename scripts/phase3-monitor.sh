@@ -47,30 +47,33 @@ echo ""
 # 1. Paper trade count (target: 50+)
 # -----------------------------------------------
 echo "--- 1. Paper Trades ---"
-TRADES=$(curl -s "${SUPABASE_URL}/rest/v1/trading_positions?select=id&status=neq.deleted" \
+# Count executed_trades (this is what the readiness gate checks)
+TRADES_DATA=$(curl -s "${SUPABASE_URL}/rest/v1/executed_trades?select=id" \
   -H "apikey: ${ANON_KEY}" \
-  -H "Authorization: Bearer ${USER_JWT}" \
-  -H "Prefer: count=exact" \
-  -I 2>/dev/null | grep -i content-range | sed 's|.*/||' || echo "0")
-
-# Fallback: count from response body
-if [ "$TRADES" = "0" ] || [ -z "$TRADES" ]; then
-  TRADES_DATA=$(curl -s "${SUPABASE_URL}/rest/v1/trading_positions?select=id" \
-    -H "apikey: ${ANON_KEY}" \
-    -H "Authorization: Bearer ${USER_JWT}")
-  TRADES=$(echo "$TRADES_DATA" | python3 -c "
+  -H "Authorization: Bearer ${USER_JWT}")
+TRADES=$(echo "$TRADES_DATA" | python3 -c "
 import json, sys
 data = json.load(sys.stdin)
 print(len(data) if isinstance(data, list) else 0)
 " 2>/dev/null || echo "0")
-fi
+
+# Also count trading_positions for comparison
+POS_DATA=$(curl -s "${SUPABASE_URL}/rest/v1/trading_positions?select=id" \
+  -H "apikey: ${ANON_KEY}" \
+  -H "Authorization: Bearer ${USER_JWT}")
+POSITIONS=$(echo "$POS_DATA" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+print(len(data) if isinstance(data, list) else 0)
+" 2>/dev/null || echo "0")
 
 TARGET_TRADES=50
 if [ "$TRADES" -ge "$TARGET_TRADES" ] 2>/dev/null; then
-  echo "  [PASS] $TRADES / $TARGET_TRADES paper trades"
+  echo "  [PASS] $TRADES / $TARGET_TRADES executed trades (readiness gate counter)"
 else
-  echo "  [    ] $TRADES / $TARGET_TRADES paper trades"
+  echo "  [    ] $TRADES / $TARGET_TRADES executed trades (readiness gate counter)"
 fi
+echo "  Positions: $POSITIONS"
 echo ""
 
 # -----------------------------------------------
@@ -123,9 +126,28 @@ echo "  Recent audit entries: $AUDIT_COUNT"
 echo ""
 
 # -----------------------------------------------
-# 5. P&L snapshots
+# 5. COOLDOWN_ENGAGED audit entries
 # -----------------------------------------------
-echo "--- 5. P&L Snapshots ---"
+echo "--- 5. Cooldown Audit Entries ---"
+COOLDOWN_COUNT=$(curl -s "${SUPABASE_URL}/rest/v1/security_audit_log?select=id&action=eq.COOLDOWN_ENGAGED" \
+  -H "apikey: ${ANON_KEY}" \
+  -H "Authorization: Bearer ${USER_JWT}" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+print(len(data) if isinstance(data, list) else 0)
+" 2>/dev/null || echo "0")
+
+if [ "$COOLDOWN_COUNT" != "0" ] && [ -n "$COOLDOWN_COUNT" ]; then
+  echo "  [PASS] COOLDOWN_ENGAGED entries: $COOLDOWN_COUNT"
+else
+  echo "  [    ] COOLDOWN_ENGAGED entries: $COOLDOWN_COUNT (triggers on P&L loss limits)"
+fi
+echo ""
+
+# -----------------------------------------------
+# 6. P&L snapshots
+# -----------------------------------------------
+echo "--- 6. P&L Snapshots ---"
 PNL_COUNT=$(curl -s "${SUPABASE_URL}/rest/v1/pnl_snapshots?select=id&order=created_at.desc&limit=10" \
   -H "apikey: ${ANON_KEY}" \
   -H "Authorization: Bearer ${USER_JWT}" | python3 -c "
@@ -138,9 +160,9 @@ echo "  P&L snapshots: $PNL_COUNT"
 echo ""
 
 # -----------------------------------------------
-# 6. Bot config status
+# 7. Bot config status
 # -----------------------------------------------
-echo "--- 6. Bot Config ---"
+echo "--- 7. Bot Config ---"
 curl -s "${SUPABASE_URL}/rest/v1/bot_config?select=mode,is_active,is_paused" \
   -H "apikey: ${ANON_KEY}" \
   -H "Authorization: Bearer ${USER_JWT}" | python3 -c "
@@ -157,9 +179,9 @@ for row in data:
 echo ""
 
 # -----------------------------------------------
-# 7. Kill switch test
+# 8. Kill switch test
 # -----------------------------------------------
-echo "--- 7. Kill Switch ---"
+echo "--- 8. Kill Switch ---"
 echo "  To test: temporarily set is_paused=true in bot_config, trigger a trade, verify rejection."
 echo "  (Run phase3-test-kill-switch.sh when ready)"
 echo ""
@@ -175,8 +197,8 @@ echo "  [$([ "$TRADES" -ge 50 ] 2>/dev/null && echo "x" || echo " ")] 50+ paper 
 echo "  [$([ "$RECON_FAILS" = "0" ] && echo "x" || echo " ")] 0 failed reconciliations ($RECON_FAILS)"
 echo "  [ ] Risk checks on every trade"
 echo "  [ ] Kill switch tested"
-echo "  [ ] Cooldown tested"
-echo "  [ ] Audit logs complete"
+echo "  [$([ "$COOLDOWN_COUNT" != "0" ] && [ -n "$COOLDOWN_COUNT" ] && echo "x" || echo " ")] Cooldown tested ($COOLDOWN_COUNT COOLDOWN_ENGAGED entries)"
+echo "  [$([ "$AUDIT_COUNT" -ge 5 ] 2>/dev/null && echo "x" || echo " ")] Audit logs complete ($AUDIT_COUNT entries)"
 echo "  [ ] No real orders placed"
 echo "=============================================="
 echo ""

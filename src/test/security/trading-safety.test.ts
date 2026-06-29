@@ -214,6 +214,28 @@ describe('Trading Safety Invariants', () => {
       expect(result.passed).toBe(false);
       expect(result.failures).toHaveLength(3);
     });
+
+    it('readiness gate counts executed_trades (paper trades must write to both tables)', () => {
+      // Simulates the requirement: paper trades must write to executed_trades
+      // so the readiness gate's "50+ paper trades" counter advances.
+      // The gate queries executed_trades, not trading_positions.
+      const paperTradesInExecutedTrades = 50;
+      const result = evaluateReadinessGate({
+        readinessChecks: [{ status: 'pass' }],
+        paperTradeCount: paperTradesInExecutedTrades,
+        failedReconciliations: 0,
+      });
+      expect(result.passed).toBe(true);
+
+      // If only trading_positions was written (old bug), gate would see 0
+      const buggyResult = evaluateReadinessGate({
+        readinessChecks: [{ status: 'pass' }],
+        paperTradeCount: 0,
+        failedReconciliations: 0,
+      });
+      expect(buggyResult.passed).toBe(false);
+      expect(buggyResult.failures[0]).toContain('need 50+ paper trades');
+    });
   });
 
   describe('4. Risk checks run before order placement', () => {

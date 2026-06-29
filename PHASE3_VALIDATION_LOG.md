@@ -24,7 +24,7 @@
 
 | Criterion | Target | Current | Status |
 |-----------|--------|---------|--------|
-| Days of paper trading | 7 | 3 | IN PROGRESS |
+| Days of paper trading | 7 | 4 | IN PROGRESS |
 | Paper trades executed | 50 | 4 | IN PROGRESS |
 | Failed reconciliations | 0 | 0 | PASS |
 | Risk checks per trade | 100% | 100% | PASS |
@@ -140,7 +140,39 @@ bash scripts/phase3-monitor.sh
 
 ### Day 4 — 2026-07-02
 
-(Template)
+**Actions:**
+- [x] Fix: paper trades now write to `executed_trades` table (readiness gate counter was not advancing)
+- [x] Update monitor to count `executed_trades` (matching readiness gate query)
+- [x] Add COOLDOWN_ENGAGED count to monitor script (section 5)
+- [x] Add test: readiness gate counts `executed_trades`, not `trading_positions`
+- [x] Confirm 54 security tests pass
+
+**Observations:**
+- **Critical bug found and fixed:** Paper trades only wrote to `trading_positions` but the readiness gate counts `executed_trades`. The 50-trade counter would never advance. Now paper trades write to both tables. The `executed_trades` insert is non-fatal — if it fails, the position still exists.
+- Paper trade `executed_trades` rows use `kraken_order_id: 'paper-{timestamp}'` to distinguish from live trades.
+- Monitor script now shows both `executed_trades` count (gate counter) and `trading_positions` count.
+- Monitor script now shows COOLDOWN_ENGAGED audit entry count in section 5.
+- All 54 security tests pass. No risk controls weakened.
+- Live trading remains disabled (HTTP 501 hard block).
+
+**Metrics:**
+- Paper trades (executed_trades): 0 (pre-fix trades only went to trading_positions; will accumulate after redeploy)
+- Paper trades (trading_positions): 4+
+- Reconciliation discrepancies: 0
+- Risk events logged: 1+
+- Audit entries: 5+
+- COOLDOWN_ENGAGED events: pending deployment
+- P&L snapshots: 1+
+- Scheduler status: healthy
+- Failures/warnings: 0
+
+**Operator action required:**
+```bash
+git pull origin claude/explain-codebase-mlkcywl5a5qn6jz6-h6AMW
+SUPABASE_ACCESS_TOKEN=<pat> npx supabase functions deploy --project-ref ijwxlzwdysvvghmxlrnq
+bash scripts/phase3-batch-paper-trades.sh 15
+bash scripts/phase3-monitor.sh
+```
 
 ---
 

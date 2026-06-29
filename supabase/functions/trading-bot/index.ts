@@ -1125,7 +1125,7 @@ serve(async (req) => {
           };
 
           console.log('[execute_trade] Inserting paper position:', position.side, position.symbol, position.entry_price);
-          const { error: posErr } = await supabase.from('trading_positions').insert(position);
+          const { data: posData, error: posErr } = await supabase.from('trading_positions').insert(position).select('id').single();
           if (posErr) {
             console.error('[execute_trade] Position insert failed:', posErr.message, posErr.details, posErr.hint);
             return new Response(JSON.stringify({
@@ -1136,11 +1136,30 @@ serve(async (req) => {
               headers: { ...corsHeaders, 'Content-Type': 'application/json' }
             });
           }
+
+          // Record in executed_trades so the readiness gate counter advances
+          const { error: etErr } = await supabase.from('executed_trades').insert({
+            user_id: userId,
+            position_id: posData.id,
+            symbol,
+            side: latestSignal.signal_type,
+            quantity: riskEval.positionSize,
+            price: latestSignal.price,
+            fee: 0,
+            realized_pnl: 0,
+            trade_type: 'entry',
+            kraken_order_id: `paper-${Date.now()}`,
+            timestamp: new Date().toISOString(),
+          });
+          if (etErr) {
+            console.error('[execute_trade] executed_trades insert failed (non-fatal):', etErr.message);
+          }
+
           try { await notificationManager.notifyTrade(latestSignal, true, 'Paper trade executed'); } catch (nErr) { console.error('[execute_trade] Notification error (non-fatal):', nErr); }
 
           return new Response(JSON.stringify({
             message: 'Paper trade executed successfully',
-            position
+            position: { ...position, id: posData.id }
           }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
