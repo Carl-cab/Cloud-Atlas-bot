@@ -2,6 +2,7 @@ import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { applyRateLimit, rateLimitConfigs } from '../_shared/rateLimiter.ts';
+import { audit, auditLog, AuditCategory, AuditSeverity } from '../_shared/auditLogger.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -386,7 +387,10 @@ class RiskManager {
         resolved:   false,
       }, { onConflict: 'user_id,reason' });
 
-    // 3. Notify the operator via Telegram (best-effort, never throws)
+    // 3. Write audit log entry for cooldown activation
+    await audit.cooldownEngaged(supabase, userId, reason, cooldownMs, details);
+
+    // 4. Notify the operator via Telegram (best-effort, never throws)
     try {
       const telegramToken = Deno.env.get('TELEGRAM_BOT_TOKEN');
       const { data: notifSettings } = await supabase

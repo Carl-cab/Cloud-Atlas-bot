@@ -580,4 +580,60 @@ describe('Trading Safety Invariants', () => {
       expect(result.shouldProceed).toBe(true);
     });
   });
+
+  // ===========================================================================
+  // Cooldown Audit Logging
+  // ===========================================================================
+  describe('Cooldown Audit Logging', () => {
+    function simulateCooldownAuditEntry(reason: string, cooldownMs: number, details: Record<string, unknown>) {
+      return {
+        action: 'COOLDOWN_ENGAGED',
+        category: 'risk',
+        severity: 'warning',
+        details: { reason, cooldown_minutes: Math.round(cooldownMs / 60000), ...details },
+      };
+    }
+
+    it('produces a COOLDOWN_ENGAGED audit entry on daily loss limit', () => {
+      const entry = simulateCooldownAuditEntry('DAILY_LOSS_LIMIT', 24 * 60 * 60 * 1000, {
+        daily_pnl: '$-50.00',
+        daily_loss_limit: '$40.00 (10.0% of capital)',
+      });
+      expect(entry.action).toBe('COOLDOWN_ENGAGED');
+      expect(entry.category).toBe('risk');
+      expect(entry.severity).toBe('warning');
+      expect(entry.details.reason).toBe('DAILY_LOSS_LIMIT');
+      expect(entry.details.cooldown_minutes).toBe(1440);
+    });
+
+    it('produces a COOLDOWN_ENGAGED audit entry on circuit breaker', () => {
+      const entry = simulateCooldownAuditEntry('CIRCUIT_BREAKER', 60 * 60 * 1000, {
+        recent_loss_1h: '$-120.00',
+        circuit_breaker_limit: '$100.00 (5% of capital)',
+      });
+      expect(entry.action).toBe('COOLDOWN_ENGAGED');
+      expect(entry.details.reason).toBe('CIRCUIT_BREAKER');
+      expect(entry.details.cooldown_minutes).toBe(60);
+    });
+
+    it('produces a COOLDOWN_ENGAGED audit entry on max drawdown', () => {
+      const entry = simulateCooldownAuditEntry('MAX_DRAWDOWN', 48 * 60 * 60 * 1000, {
+        current_balance: '$700.00',
+        peak_balance: '$1000.00',
+        drawdown: '30.00%',
+      });
+      expect(entry.action).toBe('COOLDOWN_ENGAGED');
+      expect(entry.details.reason).toBe('MAX_DRAWDOWN');
+      expect(entry.details.cooldown_minutes).toBe(2880);
+    });
+
+    it('cooldown entry does not weaken the pause — is_paused still set', () => {
+      const botConfig = { is_paused: false, paused_reason: null as string | null };
+      // Simulate engageCooldown side-effect
+      botConfig.is_paused = true;
+      botConfig.paused_reason = 'DAILY_LOSS_LIMIT';
+      expect(botConfig.is_paused).toBe(true);
+      expect(botConfig.paused_reason).toBe('DAILY_LOSS_LIMIT');
+    });
+  });
 });

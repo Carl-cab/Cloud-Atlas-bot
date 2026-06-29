@@ -205,4 +205,18 @@ export const audit = {
     details: { authenticated_user: authenticatedUserId, requested_user: requestedUserId, attempted_action: action },
     ipAddress,
   }),
+
+  cooldownEngaged: (
+    supabase: ReturnType<typeof createClient>,
+    userId: string,
+    reason: string,
+    cooldownMs: number,
+    details: Record<string, unknown>
+  ) => auditLog(supabase, {
+    userId,
+    action: 'COOLDOWN_ENGAGED',
+    category: AuditCategory.RISK,
+    severity: AuditSeverity.WARNING,
+    details: { reason, cooldown_minutes: Math.round(cooldownMs / 60000), ...details },
+  }),
 };
