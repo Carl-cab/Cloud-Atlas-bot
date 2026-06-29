@@ -113,7 +113,12 @@ for i in $(seq 1 "$TRADE_COUNT"); do
 import json, sys
 try:
     data = json.load(sys.stdin)
-    print(data.get('message', data.get('error', data.get('reason', 'unknown'))))
+    msg = data.get('message', data.get('error', 'unknown'))
+    reason = data.get('reason', '')
+    if reason:
+        print(f'{msg} | reason: {reason}')
+    else:
+        print(msg)
 except: print('parse error')
 " 2>/dev/null || echo "?")
 

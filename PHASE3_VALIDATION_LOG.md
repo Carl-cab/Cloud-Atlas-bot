@@ -24,7 +24,7 @@
 
 | Criterion | Target | Current | Status |
 |-----------|--------|---------|--------|
-| Days of paper trading | 7 | 4 | IN PROGRESS |
+| Days of paper trading | 7 | 5 | IN PROGRESS |
 | Paper trades executed | 50 | 4 | IN PROGRESS |
 | Failed reconciliations | 0 | 0 | PASS |
 | Risk checks per trade | 100% | 100% | PASS |
@@ -178,7 +178,44 @@ bash scripts/phase3-monitor.sh
 
 ### Day 5 — 2026-07-03
 
-(Template)
+**Actions:**
+- [x] Fix live-trading-engine syntax bug (double `}` closing class prematurely)
+- [x] Diagnose trade rejection: all 10 batch trades rejected by "Maximum open positions reached" (4 open positions from Day 1, default max=4)
+- [x] Add paper position management: close positions hitting stop-loss or take-profit based on current market price before risk evaluation
+- [x] Add `test_cooldown` action (paper mode only): triggers engageCooldown() to verify audit pipeline, then un-pauses bot
+- [x] Make `engageCooldown()` callable from test_cooldown action
+- [x] Add `TRADE_REJECTED` audit log entry with reason, symbol, and mode
+- [x] Add `PAPER_TRADE_EXECUTED` audit log entry for successful paper trades
+- [x] Improve batch script to show rejection reasons in output
+- [x] Rewrite cooldown test script to use `test_cooldown` action for reliable cooldown verification
+- [x] Add 11 new tests: position close logic, rejection logging, test_cooldown safety (65 total pass)
+
+**Root cause of rejections:**
+Paper trades created `open` positions that never closed. Default `max_positions=4` blocked all new trades after the first 4. The fix simulates stop-loss/take-profit closes using current market price before each trade attempt.
+
+**Observations:**
+- Position management runs inside `execute_trade` before risk evaluation, only in paper mode
+- Stop-loss/take-profit closes write to both `trading_positions` (status=closed) and `executed_trades` (for readiness gate)
+- `test_cooldown` action exercises the full `engageCooldown()` path (pause + risk_cooldowns + audit log + Telegram) then restores bot to operational state
+- All risk controls remain at full strength — no thresholds changed, no checks skipped
+- Live trading remains disabled (HTTP 501 hard block)
+
+**Metrics:**
+- Paper trades (executed_trades): will accumulate after redeploy + batch run
+- Reconciliation discrepancies: 0
+- Audit entries: will increase (rejections + executions + cooldown now all logged)
+- COOLDOWN_ENGAGED events: will appear after running cooldown test script
+- Scheduler status: healthy
+- Failures/warnings: 0
+
+**Operator action required:**
+```bash
+git pull origin claude/explain-codebase-mlkcywl5a5qn6jz6-h6AMW
+SUPABASE_ACCESS_TOKEN=<pat> npx supabase functions deploy --project-ref ijwxlzwdysvvghmxlrnq
+bash scripts/phase3-batch-paper-trades.sh 15
+bash scripts/phase3-test-cooldown.sh
+bash scripts/phase3-monitor.sh
+```
 
 ---
 

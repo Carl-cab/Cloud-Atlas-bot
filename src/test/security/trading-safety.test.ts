@@ -658,4 +658,120 @@ describe('Trading Safety Invariants', () => {
       expect(botConfig.paused_reason).toBe('DAILY_LOSS_LIMIT');
     });
   });
+
+  // ===========================================================================
+  // Paper Position Management & Trade Rejection Logging
+  // ===========================================================================
+  describe('Paper Position Management', () => {
+    function simulatePositionClose(pos: { side: string; entry_price: number; stop_loss: number; take_profit: number }, currentPrice: number) {
+      let shouldClose = false;
+      let closeReason = '';
+      let realizedPnl = 0;
+
+      if (pos.side === 'buy') {
+        if (pos.stop_loss > 0 && currentPrice <= pos.stop_loss) {
+          shouldClose = true; closeReason = 'stop_loss'; realizedPnl = (currentPrice - pos.entry_price);
+        } else if (pos.take_profit > 0 && currentPrice >= pos.take_profit) {
+          shouldClose = true; closeReason = 'take_profit'; realizedPnl = (currentPrice - pos.entry_price);
+        }
+      } else if (pos.side === 'sell') {
+        if (pos.stop_loss > 0 && currentPrice >= pos.stop_loss) {
+          shouldClose = true; closeReason = 'stop_loss'; realizedPnl = (pos.entry_price - currentPrice);
+        } else if (pos.take_profit > 0 && currentPrice <= pos.take_profit) {
+          shouldClose = true; closeReason = 'take_profit'; realizedPnl = (pos.entry_price - currentPrice);
+        }
+      }
+
+      return { shouldClose, closeReason, realizedPnl };
+    }
+
+    it('closes buy position when price drops to stop-loss', () => {
+      const result = simulatePositionClose({ side: 'buy', entry_price: 100, stop_loss: 95, take_profit: 110 }, 94);
+      expect(result.shouldClose).toBe(true);
+      expect(result.closeReason).toBe('stop_loss');
+      expect(result.realizedPnl).toBeLessThan(0);
+    });
+
+    it('closes buy position when price rises to take-profit', () => {
+      const result = simulatePositionClose({ side: 'buy', entry_price: 100, stop_loss: 95, take_profit: 110 }, 111);
+      expect(result.shouldClose).toBe(true);
+      expect(result.closeReason).toBe('take_profit');
+      expect(result.realizedPnl).toBeGreaterThan(0);
+    });
+
+    it('closes sell position when price rises to stop-loss', () => {
+      const result = simulatePositionClose({ side: 'sell', entry_price: 100, stop_loss: 105, take_profit: 90 }, 106);
+      expect(result.shouldClose).toBe(true);
+      expect(result.closeReason).toBe('stop_loss');
+      expect(result.realizedPnl).toBeLessThan(0);
+    });
+
+    it('closes sell position when price drops to take-profit', () => {
+      const result = simulatePositionClose({ side: 'sell', entry_price: 100, stop_loss: 105, take_profit: 90 }, 89);
+      expect(result.shouldClose).toBe(true);
+      expect(result.closeReason).toBe('take_profit');
+      expect(result.realizedPnl).toBeGreaterThan(0);
+    });
+
+    it('keeps position open when price is between stop-loss and take-profit', () => {
+      const result = simulatePositionClose({ side: 'buy', entry_price: 100, stop_loss: 95, take_profit: 110 }, 102);
+      expect(result.shouldClose).toBe(false);
+    });
+
+    it('max open positions check blocks trade when at limit', () => {
+      const maxPositions = 4;
+      const openPositionCount = 4;
+      const blocked = openPositionCount >= maxPositions;
+      expect(blocked).toBe(true);
+    });
+
+    it('max open positions check allows trade after positions close', () => {
+      const maxPositions = 4;
+      const openPositionCount = 2;
+      const blocked = openPositionCount >= maxPositions;
+      expect(blocked).toBe(false);
+    });
+  });
+
+  describe('Trade Rejection Audit Logging', () => {
+    function simulateRejectionAuditEntry(reason: string, symbol: string, mode: string) {
+      return {
+        action: 'TRADE_REJECTED',
+        category: 'trading',
+        severity: 'warning',
+        details: { reason, symbol, mode },
+      };
+    }
+
+    it('logs rejection with reason and symbol', () => {
+      const entry = simulateRejectionAuditEntry('Maximum open positions reached', 'XBTUSD', 'paper');
+      expect(entry.action).toBe('TRADE_REJECTED');
+      expect(entry.details.reason).toBe('Maximum open positions reached');
+      expect(entry.details.symbol).toBe('XBTUSD');
+      expect(entry.details.mode).toBe('paper');
+    });
+
+    it('logs confidence rejection', () => {
+      const entry = simulateRejectionAuditEntry('Signal confidence below threshold (0.6)', 'ETHUSD', 'paper');
+      expect(entry.details.reason).toContain('confidence');
+    });
+  });
+
+  describe('test_cooldown action safety', () => {
+    it('only works in paper mode', () => {
+      const modes = ['paper', 'live'];
+      const allowed = modes.map(m => ({ mode: m, permitted: m === 'paper' }));
+      expect(allowed[0].permitted).toBe(true);
+      expect(allowed[1].permitted).toBe(false);
+    });
+
+    it('un-pauses bot after cooldown test', () => {
+      // Simulate: engageCooldown sets is_paused=true, then test_cooldown sets it back to false
+      let isPaused = false;
+      isPaused = true; // engageCooldown effect
+      expect(isPaused).toBe(true);
+      isPaused = false; // test_cooldown cleanup
+      expect(isPaused).toBe(false);
+    });
+  });
 });

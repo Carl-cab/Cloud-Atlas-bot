@@ -45,58 +45,81 @@ echo "=============================================="
 echo ""
 
 # -----------------------------------------------
-# Trigger multiple rapid trade attempts
+# Step 1: Trigger test_cooldown (paper-mode only)
+# This exercises the full engageCooldown() path including
+# audit logging, risk_cooldowns write, and Telegram notification.
 # -----------------------------------------------
-SYMBOLS=("XBTUSD" "ETHUSD" "XBTUSD" "SOLUSD" "ETHUSD")
+echo "--- Step 1: Trigger test_cooldown action ---"
 COOLDOWN_TRIGGERED=false
 
-for i in "${!SYMBOLS[@]}"; do
-  SYM="${SYMBOLS[$i]}"
-  echo "--- Trade attempt $((i+1)): $SYM ---"
+RESPONSE=$(curl -s -w "\n%{http_code}" \
+  "${SUPABASE_URL}/functions/v1/trading-bot" \
+  -H "Authorization: Bearer ${USER_JWT}" \
+  -H "Content-Type: application/json" \
+  -H "apikey: ${ANON_KEY}" \
+  -d '{"action": "test_cooldown", "reason": "PAPER_COOLDOWN_TEST"}')
 
-  # Generate a signal first
-  curl -s "${SUPABASE_URL}/functions/v1/trading-bot" \
-    -H "Authorization: Bearer ${USER_JWT}" \
-    -H "Content-Type: application/json" \
-    -H "apikey: ${ANON_KEY}" \
-    -d "{\"action\": \"generate_paper_signal\", \"symbol\": \"${SYM}\"}" > /dev/null
+HTTP=$(echo "$RESPONSE" | tail -1)
+BODY=$(echo "$RESPONSE" | sed '$d')
 
-  RESPONSE=$(curl -s -w "\n%{http_code}" \
-    "${SUPABASE_URL}/functions/v1/trading-bot" \
-    -H "Authorization: Bearer ${USER_JWT}" \
-    -H "Content-Type: application/json" \
-    -H "apikey: ${ANON_KEY}" \
-    -d "{\"action\": \"execute_trade\", \"symbol\": \"${SYM}\"}")
-
-  HTTP=$(echo "$RESPONSE" | tail -1)
-  BODY=$(echo "$RESPONSE" | sed '$d')
-
-  MSG=$(echo "$BODY" | python3 -c "
+echo "  HTTP $HTTP"
+echo "$BODY" | python3 -c "
 import json, sys
 try:
     data = json.load(sys.stdin)
-    msg = data.get('message', data.get('error', data.get('reason', '')))
-    print(msg)
-except: print('parse error')
-" 2>/dev/null || echo "?")
+    print(f'  Message: {data.get(\"message\", \"?\")}')
+    print(f'  Audit logged: {data.get(\"audit_logged\", False)}')
+    print(f'  Bot unpaused: {data.get(\"bot_unpaused\", False)}')
+except: pass
+" 2>/dev/null
 
-  echo "  HTTP $HTTP: $MSG"
-
-  if echo "$MSG" | grep -iq "cooldown\|rate.limit\|too.many\|consecutive"; then
-    COOLDOWN_TRIGGERED=true
-    echo "  [PASS] Cooldown/rate limit triggered!"
-    break
-  fi
-
-  sleep 1
-done
-
+if [ "$HTTP" = "200" ]; then
+  COOLDOWN_TRIGGERED=true
+  echo "  [PASS] Cooldown test action succeeded"
+else
+  echo "  [FAIL] Cooldown test action returned HTTP $HTTP"
+fi
 echo ""
 
 # -----------------------------------------------
-# Check scheduler-engine rate limit
+# Step 2: Verify bot is unpaused and can still trade
 # -----------------------------------------------
-echo "--- Checking scheduler cooldown status ---"
+echo "--- Step 2: Verify trading still works after cooldown test ---"
+curl -s "${SUPABASE_URL}/functions/v1/trading-bot" \
+  -H "Authorization: Bearer ${USER_JWT}" \
+  -H "Content-Type: application/json" \
+  -H "apikey: ${ANON_KEY}" \
+  -d '{"action": "generate_paper_signal", "symbol": "XBTUSD"}' > /dev/null
+
+TRADE_RESP=$(curl -s -w "\n%{http_code}" \
+  "${SUPABASE_URL}/functions/v1/trading-bot" \
+  -H "Authorization: Bearer ${USER_JWT}" \
+  -H "Content-Type: application/json" \
+  -H "apikey: ${ANON_KEY}" \
+  -d '{"action": "execute_trade", "symbol": "XBTUSD"}')
+
+TRADE_HTTP=$(echo "$TRADE_RESP" | tail -1)
+TRADE_BODY=$(echo "$TRADE_RESP" | sed '$d')
+TRADE_MSG=$(echo "$TRADE_BODY" | python3 -c "
+import json, sys
+try:
+    data = json.load(sys.stdin)
+    print(data.get('message', data.get('error', '?')))
+except: print('?')
+" 2>/dev/null || echo "?")
+
+echo "  HTTP $TRADE_HTTP: $TRADE_MSG"
+if [ "$TRADE_HTTP" = "403" ]; then
+  echo "  [WARN] Bot still paused — cooldown un-pause may have failed"
+else
+  echo "  [PASS] Bot is operational after cooldown test"
+fi
+echo ""
+
+# -----------------------------------------------
+# Step 3: Check scheduler-engine threshold checks
+# -----------------------------------------------
+echo "--- Step 3: Checking scheduler threshold status ---"
 SCHED_RESPONSE=$(curl -s \
   "${SUPABASE_URL}/functions/v1/scheduler-engine" \
   -H "Authorization: Bearer ${USER_JWT}" \

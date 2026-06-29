@@ -468,7 +468,6 @@ class LiveTradingEngine {
       console.error('Error storing order:', error);
     }
   }
-  }
 
   private async updateOrderStatus(order_id: string, status: string): Promise<void> {
     const { error } = await this.supabase

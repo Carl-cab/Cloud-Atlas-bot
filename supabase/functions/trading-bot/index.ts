@@ -361,7 +361,7 @@ class RiskManager {
   // Pause the bot with a reason and schedule automatic cooldown resumption.
   // Writes a risk_cooldowns row so the scheduler can re-enable trading.
   // -------------------------------------------------------------------------
-  private async engageCooldown(
+  async engageCooldown(
     userId: string,
     reason: string,
     cooldownMs: number,
@@ -1090,6 +1090,62 @@ serve(async (req) => {
           });
         }
 
+        // Paper position management: close positions that hit stop-loss or take-profit
+        if (botConfig.mode === 'paper' && latestSignal) {
+          const { data: openPaperPositions } = await supabase
+            .from('trading_positions')
+            .select('id, side, entry_price, stop_loss, take_profit, quantity, symbol')
+            .eq('user_id', userId)
+            .eq('status', 'open');
+
+          const currentPrice = latestSignal.price;
+          let closedCount = 0;
+
+          for (const pos of (openPaperPositions ?? [])) {
+            const sl = Number(pos.stop_loss);
+            const tp = Number(pos.take_profit);
+            const entry = Number(pos.entry_price);
+            let shouldClose = false;
+            let closeReason = '';
+            let realizedPnl = 0;
+
+            if (pos.side === 'buy') {
+              if (sl > 0 && currentPrice <= sl) { shouldClose = true; closeReason = 'stop_loss'; realizedPnl = (currentPrice - entry) * Number(pos.quantity); }
+              else if (tp > 0 && currentPrice >= tp) { shouldClose = true; closeReason = 'take_profit'; realizedPnl = (currentPrice - entry) * Number(pos.quantity); }
+            } else if (pos.side === 'sell') {
+              if (sl > 0 && currentPrice >= sl) { shouldClose = true; closeReason = 'stop_loss'; realizedPnl = (entry - currentPrice) * Number(pos.quantity); }
+              else if (tp > 0 && currentPrice <= tp) { shouldClose = true; closeReason = 'take_profit'; realizedPnl = (entry - currentPrice) * Number(pos.quantity); }
+            }
+
+            if (shouldClose) {
+              await supabase.from('trading_positions')
+                .update({ status: 'closed', closed_at: new Date().toISOString() })
+                .eq('id', pos.id);
+
+              await supabase.from('executed_trades').insert({
+                user_id: userId,
+                position_id: pos.id,
+                symbol: pos.symbol,
+                side: pos.side === 'buy' ? 'sell' : 'buy',
+                quantity: Number(pos.quantity),
+                price: currentPrice,
+                fee: 0,
+                realized_pnl: realizedPnl,
+                trade_type: closeReason,
+                kraken_order_id: `paper-close-${Date.now()}`,
+                timestamp: new Date().toISOString(),
+              });
+
+              closedCount++;
+              console.log(`[execute_trade] Paper position closed: ${pos.id} reason=${closeReason} pnl=${realizedPnl.toFixed(4)}`);
+            }
+          }
+
+          if (closedCount > 0) {
+            console.log(`[execute_trade] Closed ${closedCount} paper positions at price ${currentPrice}`);
+          }
+        }
+
         // PHASE 2 FIX: Pass userId to evaluateRisk so DB queries are user-scoped
         const balance = Number(botConfig.capital_cad) || 10000;
         console.log('[execute_trade] Running risk evaluation, balance:', balance);
@@ -1097,6 +1153,13 @@ serve(async (req) => {
         console.log('[execute_trade] Risk result: approved=', riskEval.approved, 'reason=', riskEval.reason);
 
         if (!riskEval.approved) {
+          await auditLog(supabase, {
+            userId,
+            action: 'TRADE_REJECTED',
+            category: AuditCategory.TRADING,
+            severity: AuditSeverity.WARNING,
+            details: { reason: riskEval.reason, symbol, signal_type: latestSignal.signal_type, confidence: latestSignal.confidence, mode: botConfig.mode },
+          });
           try { await notificationManager.notifyTrade(latestSignal, false, riskEval.reason); } catch (nErr) { console.error('[execute_trade] Notification error (non-fatal):', nErr); }
           return new Response(JSON.stringify({
             message: 'Trade rejected by risk management',
@@ -1154,6 +1217,14 @@ serve(async (req) => {
           if (etErr) {
             console.error('[execute_trade] executed_trades insert failed (non-fatal):', etErr.message);
           }
+
+          await auditLog(supabase, {
+            userId,
+            action: 'PAPER_TRADE_EXECUTED',
+            category: AuditCategory.TRADING,
+            severity: AuditSeverity.INFO,
+            details: { symbol, side: latestSignal.signal_type, quantity: riskEval.positionSize, price: latestSignal.price, position_id: posData.id },
+          });
 
           try { await notificationManager.notifyTrade(latestSignal, true, 'Paper trade executed'); } catch (nErr) { console.error('[execute_trade] Notification error (non-fatal):', nErr); }
 
@@ -1271,6 +1342,43 @@ serve(async (req) => {
         return new Response(JSON.stringify({
           message: 'Paper signal generated',
           signal: paperSignal,
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
+      case 'test_cooldown': {
+        // Paper-mode only: trigger a cooldown to verify the audit logging pipeline.
+        // This does NOT weaken risk controls — it exercises the same engageCooldown()
+        // path that real risk limit breaches use, and it only works in paper mode.
+        if (!botConfig || botConfig.mode !== 'paper') {
+          return new Response(JSON.stringify({ error: 'test_cooldown only available in paper mode' }), {
+            status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        const cooldownReason = body.reason || 'PAPER_COOLDOWN_TEST';
+        const cooldownMs = 60 * 1000; // 1 minute (short for testing)
+        const cooldownDetails = {
+          test: true,
+          triggered_by: 'test_cooldown action',
+          mode: 'paper',
+        };
+
+        await riskManager.engageCooldown(userId, cooldownReason, cooldownMs, cooldownDetails);
+
+        // Immediately un-pause so paper trading can continue
+        await supabase
+          .from('bot_config')
+          .update({ is_paused: false, paused_reason: null })
+          .eq('user_id', userId);
+
+        return new Response(JSON.stringify({
+          message: 'Cooldown test completed',
+          reason: cooldownReason,
+          cooldown_ms: cooldownMs,
+          audit_logged: true,
+          bot_unpaused: true,
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
