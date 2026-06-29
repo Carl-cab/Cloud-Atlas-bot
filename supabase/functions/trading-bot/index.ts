@@ -1351,13 +1351,19 @@ serve(async (req) => {
         // Paper-mode only: trigger a cooldown to verify the audit logging pipeline.
         // This does NOT weaken risk controls — it exercises the same engageCooldown()
         // path that real risk limit breaches use, and it only works in paper mode.
-        if (!botConfig || botConfig.mode !== 'paper') {
+        const { data: testCooldownConfig } = await supabase
+          .from('bot_config')
+          .select('mode')
+          .eq('user_id', userId)
+          .maybeSingle();
+
+        if (!testCooldownConfig || testCooldownConfig.mode !== 'paper') {
           return new Response(JSON.stringify({ error: 'test_cooldown only available in paper mode' }), {
             status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
 
-        const cooldownReason = body.reason || 'PAPER_COOLDOWN_TEST';
+        const cooldownReason = requestBody.reason || 'PAPER_COOLDOWN_TEST';
         const cooldownMs = 60 * 1000; // 1 minute (short for testing)
         const cooldownDetails = {
           test: true,
