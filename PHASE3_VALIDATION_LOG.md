@@ -24,15 +24,15 @@
 
 | Criterion | Target | Current | Status |
 |-----------|--------|---------|--------|
-| Days of paper trading | 7 | 6 | IN PROGRESS |
-| Paper trades executed | 50 | 63 | PASS |
+| Days of paper trading | 7 | 1 | IN PROGRESS |
+| Paper trades executed | 50 | 91 | PASS |
 | Failed reconciliations | 0 | 0 | PASS |
 | Risk checks per trade | 100% | 100% | PASS |
-| Kill switch tested | Yes | Yes | PASS |
-| Cooldown tested | Yes | Yes (audit logged, bot unpaused) | PASS |
+| Kill switch tested | Yes | Yes (test_kill_switch + risk_cooldowns evidence) | PASS |
+| Cooldown tested | Yes | Yes (risk_cooldowns evidence, bot unpaused) | PASS |
 | Audit logs complete | Yes | Yes (BROKER_SELECTED, ORDER_SIMULATED, MARKET_DATA_FETCHED, RECONCILIATION_SKIPPED all present) | PASS |
 | Real orders placed | 0 | 0 | PASS |
-| USE_BROKER_ADAPTERS=true | Stable | Stable (63 trades, 0 errors) | PASS |
+| USE_BROKER_ADAPTERS=true | Stable | Stable (91 trades, 0 errors) | PASS |
 
 ---
 
@@ -274,6 +274,36 @@ bash scripts/phase3-monitor.sh
 - All evidence checks are DB-queryable, not hardcoded
 - Monitor summary shows which criteria pass with evidence source
 - 141 security tests pass (27 broker-adapter + 20 monitor-evidence + 65 trading-safety + 29 broker-wiring)
+
+---
+
+### Day 6c — 2026-06-29 (Additional Batch + Monitor Evidence)
+
+**Actions:**
+- [x] Run `scripts/phase3-batch-paper-trades.sh 5`
+- [x] Run `scripts/phase3-monitor.sh`
+- [x] Verify broker-adapter paper trades continue to execute without HTTP 500s
+- [x] Record updated evidence-based monitor result in this log
+
+**Observations:**
+- Additional production paper-trading batch completed successfully with mixed outcomes that reflect normal risk enforcement: 4 paper trades executed and 1 trade rejected due to `Maximum open positions reached`.
+- No runtime crashes or HTTP 500s occurred during the batch.
+- Evidence-based monitor confirms the system remains stable in paper mode and that the only remaining incomplete Phase 3 criterion is elapsed time across distinct trading days.
+- Kill switch, cooldown, risk coverage, reconciliation, audit presence, and no-real-order checks all remain satisfied under the latest production deployment.
+
+**Metrics:**
+- Batch run result: 4 executed, 1 rejected, 0 errors
+- Paper trades (executed_trades): 91
+- Distinct trading days: 1 / 7
+- Reconciliation discrepancies: 0
+- Positions with `risk_amount` + `stop_loss`: 48 / 48
+- Cooldown verification: PASS via `risk_cooldowns` (2 entries)
+- Kill switch verification: PASS via `test_kill_switch` + `risk_cooldowns`
+- Real orders placed: 0
+
+**Monitor summary:**
+- 7 / 8 criteria passing
+- Remaining blocker: `7 days paper trading`
 
 ---
 
