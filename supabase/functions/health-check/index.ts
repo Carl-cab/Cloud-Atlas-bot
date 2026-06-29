@@ -213,7 +213,7 @@ async function checkBotConfig(): Promise<CheckResult[]> {
   try {
     const { data, error } = await supabaseAdmin
       .from('bot_config')
-      .select('is_paused, paper_trading_mode, max_daily_loss_pct')
+      .select('is_paused, mode, daily_stop_loss')
       .limit(1);
 
     if (error) {
@@ -228,7 +228,7 @@ async function checkBotConfig(): Promise<CheckResult[]> {
         name:     'bot_config_schema',
         category: 'trading',
         status:   'pass',
-        message:  'bot_config has required Phase 2 columns (is_paused, paper_trading_mode, max_daily_loss_pct)',
+        message:  'bot_config has required columns (is_paused, mode, daily_stop_loss)',
       });
     }
   } catch (e) {
@@ -244,8 +244,8 @@ async function checkBotConfig(): Promise<CheckResult[]> {
   try {
     const { data: liveConfigs, error } = await supabaseAdmin
       .from('bot_config')
-      .select('id, user_id, paper_trading_mode')
-      .eq('paper_trading_mode', false)
+      .select('id, user_id, mode')
+      .eq('mode', 'live')
       .eq('is_paused', false);
 
     if (!error && liveConfigs && liveConfigs.length > 0) {
@@ -329,20 +329,21 @@ async function checkWalletEngine(): Promise<CheckResult[]> {
   return results;
 }
 
-async function checkAuditLog(): Promise<CheckResult[]> {
+async function checkAuditLog(userId: string): Promise<CheckResult[]> {
   const results: CheckResult[] = [];
 
   try {
-    // Write a test audit entry
+    // Write a test audit entry using only columns confirmed in PostgREST schema cache
     const { error } = await supabaseAdmin
       .from('security_audit_log')
       .insert({
-        user_id:    null,
-        action:     'HEALTH_CHECK',
-        category:   'system',
-        severity:   'info',
-        details:    { message: 'Pre-flight health check audit log test' },
-        ip_address: '127.0.0.1',
+        user_id:        userId,
+        action:         'HEALTH_CHECK',
+        resource:       'health-check',
+        success:        true,
+        event_category: 'system',
+        severity_level: 'info',
+        metadata:       { message: 'Pre-flight health check audit log test' },
       });
 
     results.push({
@@ -417,7 +418,7 @@ async function runAllChecks(userId: string): Promise<CheckResult[]> {
     ...(await checkRLSEnabled()),
     ...(await checkBotConfig()),
     ...(await checkWalletEngine()),
-    ...(await checkAuditLog()),
+    ...(await checkAuditLog(userId)),
     ...(await checkAppSettings()),
   ];
 

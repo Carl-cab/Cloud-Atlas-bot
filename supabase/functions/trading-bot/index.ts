@@ -1083,7 +1083,54 @@ serve(async (req) => {
           });
         }
 
-        break;
+        // LIVE TRADING READINESS GATE
+        // Live trading is blocked until ALL readiness criteria are met.
+        // This gate cannot be bypassed by changing bot_config.mode alone.
+        const { data: readinessChecks } = await supabase
+          .from('deployment_checks')
+          .select('status')
+          .eq('check_category', 'trading')
+          .order('checked_at', { ascending: false })
+          .limit(20);
+
+        const hasFailedChecks = !readinessChecks || readinessChecks.some(c => c.status === 'fail');
+
+        const { count: paperTradeCount } = await supabase
+          .from('executed_trades')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', userId);
+
+        const { count: failedReconciliations } = await supabase
+          .from('reconciliation_log')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', userId)
+          .eq('status', 'discrepancy');
+
+        const gateFailures: string[] = [];
+        if (hasFailedChecks) gateFailures.push('health-check has failed checks');
+        if ((paperTradeCount ?? 0) < 50) gateFailures.push(`need 50+ paper trades (have ${paperTradeCount ?? 0})`);
+        if ((failedReconciliations ?? 0) > 0) gateFailures.push('unresolved reconciliation discrepancies exist');
+
+        if (gateFailures.length > 0) {
+          return new Response(JSON.stringify({
+            error: 'Live trading readiness gate FAILED',
+            gate_failures: gateFailures,
+            message: 'Live trading cannot be enabled until all readiness criteria pass. Run in paper mode first.',
+          }), {
+            status: 403,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        // If all gates pass but live trading is attempted, still block for this release.
+        // Live trading execution will be implemented in a future phase.
+        return new Response(JSON.stringify({
+          error: 'Live trading is not yet implemented',
+          message: 'All readiness gates passed, but live order execution is disabled in this release.',
+        }), {
+          status: 501,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
       }
 
       case 'train_model':
