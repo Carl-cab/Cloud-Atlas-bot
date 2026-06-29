@@ -333,15 +333,13 @@ async function checkAuditLog(userId: string): Promise<CheckResult[]> {
   const results: CheckResult[] = [];
 
   try {
-    // Write a test audit entry — include all columns that may be NOT NULL in live schema
+    // Write a test audit entry using only columns confirmed in PostgREST schema cache
     const { error } = await supabaseAdmin
       .from('security_audit_log')
       .insert({
         user_id:        userId,
         action:         'HEALTH_CHECK',
         resource:       'health-check',
-        ip_address:     '127.0.0.1',
-        user_agent:     'health-check/1.0',
         success:        true,
         event_category: 'system',
         severity_level: 'info',
