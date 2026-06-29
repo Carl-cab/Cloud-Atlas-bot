@@ -329,7 +329,7 @@ async function checkWalletEngine(): Promise<CheckResult[]> {
   return results;
 }
 
-async function checkAuditLog(): Promise<CheckResult[]> {
+async function checkAuditLog(userId: string): Promise<CheckResult[]> {
   const results: CheckResult[] = [];
 
   try {
@@ -337,7 +337,7 @@ async function checkAuditLog(): Promise<CheckResult[]> {
     const { error } = await supabaseAdmin
       .from('security_audit_log')
       .insert({
-        user_id:        null,
+        user_id:        userId,
         action:         'HEALTH_CHECK',
         event_category: 'system',
         severity_level: 'info',
@@ -416,7 +416,7 @@ async function runAllChecks(userId: string): Promise<CheckResult[]> {
     ...(await checkRLSEnabled()),
     ...(await checkBotConfig()),
     ...(await checkWalletEngine()),
-    ...(await checkAuditLog()),
+    ...(await checkAuditLog(userId)),
     ...(await checkAppSettings()),
   ];
 
