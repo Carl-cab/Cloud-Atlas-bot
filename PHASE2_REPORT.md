@@ -1,16 +1,26 @@
 # Phase 2: Health Check Validation Report
 
-**Date**: 2026-06-28
-**Status**: Offline validation COMPLETE | Online validation BLOCKED on credentials
-**Blocking**: Supabase Personal Access Token required
+**Date**: 2026-06-29
+**Status**: Offline validation COMPLETE | Online validation BLOCKED by sandbox network policy
+**Blocking**: Sandbox egress proxy blocks `api.supabase.com` and `*.supabase.co`
 
 ---
 
 ## Executive Summary
 
-Phase 2 offline validation is complete. All code has been audited against the actual database schema, **4 schema mismatches** were found and fixed, and all fixes are committed and pushed. The system is ready for deployment and online health-check — pending Supabase credentials.
+Phase 2 offline validation is complete. All code has been audited against the actual database schema, **4 schema mismatches** were found and fixed, and all fixes are committed and pushed.
+
+Online validation (deploy, migrate, health-check) cannot be run from the cloud sandbox because its network policy blocks outbound HTTPS to Supabase domains. A ready-to-run script (`scripts/phase2-complete.sh`) is provided for local execution.
 
 **Live trading remains disabled. Paper trading remains the default.**
+
+### Network Policy Block (discovered 2026-06-29)
+
+The cloud sandbox egress proxy returns HTTP 403 for:
+- `api.supabase.com:443` (CLI operations: deploy, link, push)
+- `asxcbnkpflgecqreegdd.supabase.co:443` (health-check endpoint)
+
+This is a sandbox restriction, not a code issue. The `SUPABASE_ACCESS_TOKEN` was provided and authentication succeeded, but all subsequent API calls are blocked.
 
 ---
 
@@ -168,42 +178,46 @@ PASS: All 10 system settings present including `paper_trading_default = 'true'`
 
 ## How to Complete Phase 2 Online
 
-### Option A: Run the all-in-one script
+**Must be run from your local machine** (not the cloud sandbox).
+
+### Option A: Interactive script (recommended)
 
 ```bash
-# 1. Get a Personal Access Token from:
-#    https://supabase.com/dashboard/account/tokens
+git fetch origin claude/explain-codebase-mlkcywl5a5qn6jz6-h6AMW
+git checkout claude/explain-codebase-mlkcywl5a5qn6jz6-h6AMW
 
-# 2. Set credentials
 export SUPABASE_ACCESS_TOKEN="sbp_xxxxxxxxxxxx"
-export SUPABASE_USER_EMAIL="your@email.com"
-export SUPABASE_USER_PASSWORD="your-password"
-
-# 3. Run everything
-bash scripts/phase2-online-validation.sh
+bash scripts/phase2-complete.sh
 ```
 
-### Option B: Run step by step
+The script will:
+1. Authenticate and link the project
+2. Prompt to push migrations
+3. Prompt to deploy all edge functions
+4. List configured secrets
+5. Prompt for email/password, get a JWT, and run the health-check
+6. Display `deployment_ready: true/false` with all check details
+
+### Option B: Step by step
 
 ```bash
-# Step 1: Authenticate
 export SUPABASE_ACCESS_TOKEN="sbp_xxxxxxxxxxxx"
-npx supabase login --token "$SUPABASE_ACCESS_TOKEN"
 
-# Step 2: Link project
+# Authenticate and link
+npx supabase login --token "$SUPABASE_ACCESS_TOKEN"
 npx supabase link --project-ref asxcbnkpflgecqreegdd
 
-# Step 3: Push migrations
+# Push migrations
 npx supabase db push --project-ref asxcbnkpflgecqreegdd
 
-# Step 4: Deploy all functions
+# Deploy all functions
 npx supabase functions deploy --project-ref asxcbnkpflgecqreegdd
 
-# Step 5: Verify secrets in Dashboard
+# Verify secrets in Dashboard:
 #   https://supabase.com/dashboard/project/asxcbnkpflgecqreegdd/settings/functions
 #   Required: ENCRYPTION_KEY (>= 32 chars)
 
-# Step 6: Get a JWT and run health-check
+# Run health-check
 export SUPABASE_URL="https://asxcbnkpflgecqreegdd.supabase.co"
 export USER_JWT="<your-jwt-token>"
 export SUPABASE_ANON_KEY="<your-anon-key>"
