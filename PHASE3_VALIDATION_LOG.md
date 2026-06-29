@@ -25,14 +25,14 @@
 | Criterion | Target | Current | Status |
 |-----------|--------|---------|--------|
 | Days of paper trading | 7 | 1 | IN PROGRESS |
-| Paper trades executed | 50 | 91 | PASS |
+| Paper trades executed | 50 | 101 | PASS |
 | Failed reconciliations | 0 | 0 | PASS |
 | Risk checks per trade | 100% | 100% | PASS |
 | Kill switch tested | Yes | Yes (test_kill_switch + risk_cooldowns evidence) | PASS |
 | Cooldown tested | Yes | Yes (risk_cooldowns evidence, bot unpaused) | PASS |
 | Audit logs complete | Yes | Yes (BROKER_SELECTED, ORDER_SIMULATED, MARKET_DATA_FETCHED, RECONCILIATION_SKIPPED all present) | PASS |
 | Real orders placed | 0 | 0 | PASS |
-| USE_BROKER_ADAPTERS=true | Stable | Stable (91 trades, 0 errors) | PASS |
+| USE_BROKER_ADAPTERS=true | Stable | Stable (101 trades, 0 errors) | PASS |
 
 ---
 
@@ -304,6 +304,47 @@ bash scripts/phase3-monitor.sh
 **Monitor summary:**
 - 7 / 8 criteria passing
 - Remaining blocker: `7 days paper trading`
+
+---
+
+### Day 6d — 2026-06-29 (Additional 5-Trade Batch)
+
+**Actions:**
+- [x] Run `scripts/phase3-batch-paper-trades.sh 5`
+- [x] Run `scripts/phase3-monitor.sh`
+- [x] Confirm paper-only execution remains stable
+- [x] Record today’s evidence in this validation log
+
+**Batch result:**
+- Executed: 5
+- Rejected: 0
+- Errors: 0
+
+**Monitor result:**
+- Phase 3 evidence-based criteria: 7 / 8 passing
+- Remaining blocker: `7 days paper trading`
+
+**Metrics:**
+- Paper trades (executed_trades): 101
+- Distinct trading day count: 1 / 7
+- Failed reconciliation count: 0
+- Any rejected trades: No
+- Positions: 53
+- P&L snapshots: 2
+- Cooldown verification: PASS via `risk_cooldowns` (2 entries)
+- Kill switch verification: PASS via `test_kill_switch` + `risk_cooldowns`
+
+**Confirmation no real orders were placed:**
+- Non-paper `executed_trades` entries: 0
+- Kraken `broker_orders` entries: 0
+- Live `TRADE_EXECUTED` audit entries: 0
+- Bot config mode remains `paper`
+
+**Observations:**
+- All 5 additional trades executed successfully in paper mode with no runtime errors.
+- Risk checks continue to run on every trade (`risk_amount` and `stop_loss` present on all positions).
+- Reconciliation remains clean with zero discrepancies.
+- The system remains stable under `USE_BROKER_ADAPTERS=true`.
 
 ---
 
