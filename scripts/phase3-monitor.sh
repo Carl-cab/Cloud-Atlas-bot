@@ -114,9 +114,12 @@ else:
     print(f'audit_total={executed + rejected} executed={executed} rejected={rejected}')
 " 2>/dev/null || echo "audit_total=0 executed=0 rejected=0")
 
-RISK_AUDIT_TOTAL=$(echo "$RISK_AUDIT_RESULT" | grep -oP 'audit_total=\K[0-9]+')
-RISK_EXECUTED=$(echo "$RISK_AUDIT_RESULT" | grep -oP 'executed=\K[0-9]+')
-RISK_REJECTED=$(echo "$RISK_AUDIT_RESULT" | grep -oP 'rejected=\K[0-9]+')
+RISK_AUDIT_TOTAL=$(echo "$RISK_AUDIT_RESULT" | sed -n 's/.*audit_total=\([0-9][0-9]*\).*/\1/p')
+RISK_AUDIT_TOTAL=${RISK_AUDIT_TOTAL:-0}
+RISK_EXECUTED=$(echo "$RISK_AUDIT_RESULT" | sed -n 's/.*executed=\([0-9][0-9]*\).*/\1/p')
+RISK_EXECUTED=${RISK_EXECUTED:-0}
+RISK_REJECTED=$(echo "$RISK_AUDIT_RESULT" | sed -n 's/.*rejected=\([0-9][0-9]*\).*/\1/p')
+RISK_REJECTED=${RISK_REJECTED:-0}
 
 POSITIONS_WITH_RISK=$(curl -s "${SUPABASE_URL}/rest/v1/trading_positions?select=id&risk_amount=not.is.null&stop_loss=not.is.null" \
   -H "apikey: ${ANON_KEY}" \
@@ -311,14 +314,35 @@ else:
         print('ACTIVE (is_paused=false)')
 " 2>/dev/null || echo "unknown")
 
+# Fallback: check risk_cooldowns for KILL_SWITCH_TEST evidence (readable by user JWT)
+KS_COOLDOWN_RAW=$(curl -s "${SUPABASE_URL}/rest/v1/risk_cooldowns?select=id,reason,resolved,details&reason=eq.KILL_SWITCH_TEST&resolved=eq.true" \
+  -H "apikey: ${ANON_KEY}" \
+  -H "Authorization: Bearer ${USER_JWT}")
+
+KS_COOLDOWN_COUNT=$(echo "$KS_COOLDOWN_RAW" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+if isinstance(data, list):
+    print(len(data))
+    for entry in data[:3]:
+        details = entry.get('details', {})
+        print(f'  - reason={entry.get(\"reason\",\"?\")} resolved={entry.get(\"resolved\",\"?\")} source={details.get(\"source\",\"?\")}')
+else:
+    print('0')
+" 2>/dev/null || echo "0")
+
 KS_EVIDENCE="false"
 if [ "$KS_ACTIVATED" != "0" ] && [ "$KS_RELEASED" != "0" ]; then
   KS_EVIDENCE="true"
-  echo "  [PASS] Kill switch tested: $KS_ACTIVATED activated + $KS_RELEASED released"
+  echo "  [PASS] Kill switch tested: $KS_ACTIVATED activated + $KS_RELEASED released (audit log)"
+elif [ "$KS_COOLDOWN_COUNT" != "0" ]; then
+  KS_EVIDENCE="true"
+  echo "  [PASS] Kill switch tested via risk_cooldowns: $KS_COOLDOWN_COUNT entries (activated + released)"
+  echo "  (audit log returned 0 — likely RLS-restricted; risk_cooldowns confirms kill switch ran)"
 elif [ "$KS_ACTIVATED" != "0" ]; then
   echo "  [WARN] KILL_SWITCH_ACTIVATED found ($KS_ACTIVATED) but no KILL_SWITCH_RELEASED"
 else
-  echo "  [    ] No kill switch audit entries found"
+  echo "  [    ] No kill switch evidence found (audit: 0, risk_cooldowns: $KS_COOLDOWN_COUNT)"
   echo "  Run: bash scripts/phase3-test-kill-switch.sh"
 fi
 echo "  Current status: $KILL_SWITCH_STATUS"
@@ -346,7 +370,8 @@ else:
         print(f'  - {d}: {day_trades} trades')
 " 2>/dev/null || echo "count=0")
 
-TRADING_DAY_COUNT=$(echo "$TRADING_DAYS" | head -1 | grep -oP 'count=\K[0-9]+')
+TRADING_DAY_COUNT=$(echo "$TRADING_DAYS" | head -1 | sed -n 's/.*count=\([0-9][0-9]*\).*/\1/p')
+TRADING_DAY_COUNT=${TRADING_DAY_COUNT:-0}
 echo "$TRADING_DAYS" | tail -n +2
 
 TARGET_DAYS=7

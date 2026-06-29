@@ -1475,6 +1475,18 @@ serve(async (req) => {
 
         await audit.killSwitchActivated(supabase, userId, 'KILL_SWITCH_TEST', 'manual');
 
+        // Write to risk_cooldowns as durable evidence (readable by user JWT unlike security_audit_log)
+        await supabase
+          .from('risk_cooldowns')
+          .upsert({
+            user_id: userId,
+            reason: 'KILL_SWITCH_TEST',
+            engaged_at: new Date().toISOString(),
+            resume_at: new Date().toISOString(),
+            details: { source: 'test_kill_switch', phase: 'activated' },
+            resolved: false,
+          }, { onConflict: 'user_id,reason' });
+
         // Step 2: Verify trade would be blocked
         const { data: pausedConfig } = await supabase
           .from('bot_config')
@@ -1491,6 +1503,17 @@ serve(async (req) => {
           .eq('user_id', userId);
 
         await audit.killSwitchReleased(supabase, userId, 'KILL_SWITCH_TEST', 'phase3-test-kill-switch');
+
+        // Update risk_cooldowns to mark kill switch as both activated AND released
+        await supabase
+          .from('risk_cooldowns')
+          .update({
+            resolved: true,
+            resolved_at: new Date().toISOString(),
+            details: { source: 'test_kill_switch', phase: 'released', activated_and_released: true },
+          })
+          .eq('user_id', userId)
+          .eq('reason', 'KILL_SWITCH_TEST');
 
         // Step 4: Verify bot is unpaused
         const { data: releasedConfig } = await supabase

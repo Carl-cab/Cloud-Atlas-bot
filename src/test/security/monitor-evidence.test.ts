@@ -107,14 +107,42 @@ function classifyNoRealOrders(
   };
 }
 
+interface KillSwitchCooldown {
+  id: string;
+  reason: string;
+  resolved: boolean;
+  details?: Record<string, unknown>;
+}
+
 function classifyKillSwitchEvidence(
   activated: AuditEntry[],
-  released: AuditEntry[]
-): { pass: boolean; activatedCount: number; releasedCount: number } {
+  released: AuditEntry[],
+  killSwitchCooldowns: KillSwitchCooldown[] = []
+): { pass: boolean; activatedCount: number; releasedCount: number; source: string } {
+  if (activated.length > 0 && released.length > 0) {
+    return {
+      pass: true,
+      activatedCount: activated.length,
+      releasedCount: released.length,
+      source: 'security_audit_log',
+    };
+  }
+  const resolvedKsCooldowns = killSwitchCooldowns.filter(
+    c => c.reason === 'KILL_SWITCH_TEST' && c.resolved === true
+  );
+  if (resolvedKsCooldowns.length > 0) {
+    return {
+      pass: true,
+      activatedCount: resolvedKsCooldowns.length,
+      releasedCount: resolvedKsCooldowns.length,
+      source: 'risk_cooldowns',
+    };
+  }
   return {
-    pass: activated.length > 0 && released.length > 0,
+    pass: false,
     activatedCount: activated.length,
     releasedCount: released.length,
+    source: 'none',
   };
 }
 
@@ -313,7 +341,7 @@ describe('Phase 3: Monitor Evidence Logic', () => {
   });
 
   describe('5. Kill Switch Evidence', () => {
-    it('passes when both ACTIVATED and RELEASED entries exist', () => {
+    it('passes via audit log when both ACTIVATED and RELEASED entries exist', () => {
       const activated: AuditEntry[] = [
         { id: 'a1', action: 'KILL_SWITCH_ACTIVATED', created_at: '2026-07-01T10:00:00Z', details: { trigger: 'manual', reason: 'KILL_SWITCH_TEST' } },
       ];
@@ -324,6 +352,7 @@ describe('Phase 3: Monitor Evidence Logic', () => {
       expect(result.pass).toBe(true);
       expect(result.activatedCount).toBe(1);
       expect(result.releasedCount).toBe(1);
+      expect(result.source).toBe('security_audit_log');
     });
 
     it('fails when only ACTIVATED exists (no release)', () => {
@@ -342,14 +371,15 @@ describe('Phase 3: Monitor Evidence Logic', () => {
       expect(result.pass).toBe(false);
     });
 
-    it('fails when both are empty', () => {
+    it('fails when both are empty and no risk_cooldowns', () => {
       const result = classifyKillSwitchEvidence([], []);
       expect(result.pass).toBe(false);
       expect(result.activatedCount).toBe(0);
       expect(result.releasedCount).toBe(0);
+      expect(result.source).toBe('none');
     });
 
-    it('passes with multiple test runs', () => {
+    it('passes with multiple test runs via audit log', () => {
       const activated: AuditEntry[] = [
         { id: 'a1', action: 'KILL_SWITCH_ACTIVATED', created_at: '2026-07-01T10:00:00Z' },
         { id: 'a2', action: 'KILL_SWITCH_ACTIVATED', created_at: '2026-07-02T10:00:00Z' },
@@ -362,6 +392,47 @@ describe('Phase 3: Monitor Evidence Logic', () => {
       expect(result.pass).toBe(true);
       expect(result.activatedCount).toBe(2);
       expect(result.releasedCount).toBe(2);
+      expect(result.source).toBe('security_audit_log');
+    });
+
+    it('passes via risk_cooldowns when audit log is RLS-restricted', () => {
+      const cooldowns: KillSwitchCooldown[] = [
+        { id: 'c1', reason: 'KILL_SWITCH_TEST', resolved: true, details: { source: 'test_kill_switch', activated_and_released: true } },
+      ];
+      const result = classifyKillSwitchEvidence([], [], cooldowns);
+      expect(result.pass).toBe(true);
+      expect(result.source).toBe('risk_cooldowns');
+    });
+
+    it('fails via risk_cooldowns when entry is not resolved', () => {
+      const cooldowns: KillSwitchCooldown[] = [
+        { id: 'c1', reason: 'KILL_SWITCH_TEST', resolved: false, details: { source: 'test_kill_switch', phase: 'activated' } },
+      ];
+      const result = classifyKillSwitchEvidence([], [], cooldowns);
+      expect(result.pass).toBe(false);
+      expect(result.source).toBe('none');
+    });
+
+    it('fails via risk_cooldowns when reason is not KILL_SWITCH_TEST', () => {
+      const cooldowns: KillSwitchCooldown[] = [
+        { id: 'c1', reason: 'PAPER_COOLDOWN_TEST', resolved: true },
+      ];
+      const result = classifyKillSwitchEvidence([], [], cooldowns);
+      expect(result.pass).toBe(false);
+    });
+
+    it('prefers audit log over risk_cooldowns', () => {
+      const activated: AuditEntry[] = [
+        { id: 'a1', action: 'KILL_SWITCH_ACTIVATED', created_at: '2026-07-01T10:00:00Z' },
+      ];
+      const released: AuditEntry[] = [
+        { id: 'r1', action: 'KILL_SWITCH_RELEASED', created_at: '2026-07-01T10:00:01Z' },
+      ];
+      const cooldowns: KillSwitchCooldown[] = [
+        { id: 'c1', reason: 'KILL_SWITCH_TEST', resolved: true },
+      ];
+      const result = classifyKillSwitchEvidence(activated, released, cooldowns);
+      expect(result.source).toBe('security_audit_log');
     });
   });
 });
