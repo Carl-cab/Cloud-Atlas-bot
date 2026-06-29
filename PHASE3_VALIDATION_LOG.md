@@ -253,17 +253,41 @@ bash scripts/phase3-monitor.sh
 
 ---
 
+### Day 6b — Evidence Quality Fix
+
+**Actions:**
+- [x] Rewrite monitor to be fully evidence-based (8 verifiable criteria)
+- [x] Add trading days check: counts distinct dates from executed_trades timestamps
+- [x] Add risk check coverage: verifies PAPER_TRADE_EXECUTED + TRADE_REJECTED audit entries cover trade count, falls back to positions with risk_amount + stop_loss
+- [x] Add no-real-orders check: verifies all executed_trades use paper-* prefix, zero kraken broker_orders, bot_config.mode = paper
+- [x] Fix cooldown evidence: checks both security_audit_log AND risk_cooldowns table (RLS fallback)
+- [x] Add 20 monitor evidence tests (141 total security tests pass)
+- [x] Monitor now shows X/8 criteria passing with evidence source
+
+**Evidence gaps identified and fixed:**
+1. COOLDOWN_ENGAGED: monitor now accepts risk_cooldowns table entries as valid evidence (RLS may block security_audit_log reads via user JWT)
+2. 7-day validation: monitor now counts distinct dates from executed_trades, not calendar time
+3. Risk coverage: monitor now queries PAPER_TRADE_EXECUTED + TRADE_REJECTED audit entries, and positions with risk_amount set
+4. No real orders: monitor now queries executed_trades for non-paper-* entries, broker_orders for kraken entries, and bot_config.mode
+
+**Observations:**
+- All evidence checks are DB-queryable, not hardcoded
+- Monitor summary shows which criteria pass with evidence source
+- 141 security tests pass (27 broker-adapter + 20 monitor-evidence + 65 trading-safety + 29 broker-wiring)
+
+---
+
 ### Day 7 — 2026-07-05
 
 **Actions:**
-- [ ] Run `scripts/phase3-monitor.sh`
-- [ ] Verify trade count stable or increasing
-- [ ] Verify 0 failed reconciliations
-- [ ] Verify no HTTP 500 errors
-- [ ] Verify bot_config.mode = 'paper'
+- [ ] Run `scripts/phase3-monitor.sh` with evidence-based checks
+- [ ] Verify 7/7 distinct trading days
+- [ ] Verify risk coverage PASS (audit or positions)
+- [ ] Verify no real orders (paper-* only, 0 broker_orders)
+- [ ] Verify cooldown evidence (audit or risk_cooldowns)
 - [ ] Final kill switch verification
-- [ ] Final cooldown verification
-- [ ] Mark Phase 3 COMPLETE if all criteria met
+- [ ] Monitor shows 8/8 criteria passing
+- [ ] Mark Phase 3 COMPLETE if all 8 criteria met
 
 **Operator action required:**
 ```bash
