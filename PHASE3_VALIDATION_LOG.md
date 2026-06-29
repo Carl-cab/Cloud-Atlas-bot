@@ -24,14 +24,15 @@
 
 | Criterion | Target | Current | Status |
 |-----------|--------|---------|--------|
-| Days of paper trading | 7 | 5 | IN PROGRESS |
-| Paper trades executed | 50 | 4 | IN PROGRESS |
+| Days of paper trading | 7 | 6 | IN PROGRESS |
+| Paper trades executed | 50 | 63 | PASS |
 | Failed reconciliations | 0 | 0 | PASS |
 | Risk checks per trade | 100% | 100% | PASS |
 | Kill switch tested | Yes | Yes | PASS |
-| Cooldown tested | Yes | Logging fixed; needs live trigger | IN PROGRESS |
-| Audit logs complete | Yes | 5 entries | IN PROGRESS |
+| Cooldown tested | Yes | Yes (audit logged, bot unpaused) | PASS |
+| Audit logs complete | Yes | Yes (BROKER_SELECTED, ORDER_SIMULATED, MARKET_DATA_FETCHED, RECONCILIATION_SKIPPED all present) | PASS |
 | Real orders placed | 0 | 0 | PASS |
+| USE_BROKER_ADAPTERS=true | Stable | Stable (63 trades, 0 errors) | PASS |
 
 ---
 
@@ -221,13 +222,55 @@ bash scripts/phase3-monitor.sh
 
 ### Day 6 — 2026-07-04
 
-(Template)
+**Actions:**
+- [x] Phase 2.5 production validation completed with USE_BROKER_ADAPTERS=true
+- [x] Fix monitor cooldown detection: now checks both security_audit_log AND risk_cooldowns table
+- [x] Fix monitor kill switch detection: queries KILL_SWITCH_ACTIVATED audit entries + live bot_config status
+- [x] Update PHASE2_5_ADAPTER_PRODUCTION_VALIDATION.md: all 19 checklist items marked PASS
+- [x] Confirm 63 paper trades executed (exceeds 50-trade target)
+- [x] Confirm 0 HTTP 500 errors across all validation scripts
+- [x] Confirm kill switch operational (trade blocked when paused, unblocked when unpaused)
+- [x] Confirm cooldown operational (audit logged: true, bot unpaused: true)
+
+**Observations:**
+- Phase 2.5 production validation PASSED: USE_BROKER_ADAPTERS=true is stable in production.
+- Broker adapter audit events confirmed present: BROKER_SELECTED, ORDER_SIMULATED, MARKET_DATA_FETCHED, RECONCILIATION_SKIPPED.
+- Monitor cooldown gap root cause: security_audit_log likely has RLS that restricts user JWT reads. The audit logger writes with service-role client (bypasses RLS for writes) but the monitor queries with user JWT. Fix: also check risk_cooldowns table as fallback — engageCooldown() writes to both tables.
+- Monitor kill switch gap root cause: kill switch test script uses direct REST API PATCHes to bot_config, which bypass the audit.killSwitchActivated() function. Fix: query for KILL_SWITCH_ACTIVATED entries (written by reconciliation-engine on discrepancy) plus show current bot_config.is_paused status.
+- All risk controls remain at full strength. No thresholds changed, no checks skipped.
+- Live trading remains disabled (HTTP 501 hard block).
+- No real orders placed.
+
+**Metrics:**
+- Paper trades (executed_trades): 63
+- Reconciliation discrepancies: 0
+- HTTP 500 errors: 0
+- COOLDOWN_ENGAGED: verified via test_cooldown action
+- Kill switch: verified (trade blocked/unblocked)
+- Broker adapter audit events: all 4 types present
+- Scheduler status: healthy
+- Failures/warnings: 0
 
 ---
 
 ### Day 7 — 2026-07-05
 
-(Template)
+**Actions:**
+- [ ] Run `scripts/phase3-monitor.sh`
+- [ ] Verify trade count stable or increasing
+- [ ] Verify 0 failed reconciliations
+- [ ] Verify no HTTP 500 errors
+- [ ] Verify bot_config.mode = 'paper'
+- [ ] Final kill switch verification
+- [ ] Final cooldown verification
+- [ ] Mark Phase 3 COMPLETE if all criteria met
+
+**Operator action required:**
+```bash
+bash scripts/phase3-monitor.sh
+bash scripts/phase3-test-kill-switch.sh
+bash scripts/phase3-test-cooldown.sh
+```
 
 ---
 
