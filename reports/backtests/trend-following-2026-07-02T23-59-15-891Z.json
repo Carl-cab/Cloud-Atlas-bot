@@ -1,0 +1,252 @@
+{
+  "generatedAt": "2026-07-02T23:59:15.891Z",
+  "thresholds": {
+    "minProfitFactor": 1.5,
+    "minSharpe": 1.5,
+    "maxDrawdownPct": 25,
+    "minTrades": 30,
+    "minNetReturnPct": 0
+  },
+  "results": [
+    {
+      "dataset": {
+        "pair": "ETHUSD",
+        "interval": 1440,
+        "candles": 721,
+        "from": "2024-07-12T00:00:00.000Z",
+        "to": "2026-07-02T00:00:00.000Z"
+      },
+      "strategy": "trend-following-ema-atr",
+      "costs": {
+        "feeRate": 0.0026,
+        "slippageBps": 5,
+        "spreadBps": 4
+      },
+      "fullSample": {
+        "netReturnPct": -0.6713928545166163,
+        "annualizedReturnPct": -0.36631956347911165,
+        "sharpeRatio": -0.17180490635076334,
+        "sortinoRatio": -0.252854570795231,
+        "calmarRatio": -0.10598291870153326,
+        "profitFactor": 0.6817722992346945,
+        "winRatePct": 25,
+        "expectancy": -16.784821362915807,
+        "maxDrawdownPct": 3.4564019180367422,
+        "recoveryFactor": -0.18879983583599333,
+        "avgHoldingCandles": 29.25,
+        "exposurePct": 17.46268656716418,
+        "totalTrades": 4,
+        "tradesPerYear": 2.1791044776119404,
+        "totalFeesPaid": 15.701710052948286,
+        "grossProfit": 143.83947375188833,
+        "grossLoss": 210.9787592035516
+      },
+      "walkForward": {
+        "windows": [],
+        "outOfSample": null,
+        "windowConsistency": 0
+      },
+      "thresholdEvaluation": null
+    },
+    {
+      "dataset": {
+        "pair": "ETHUSD",
+        "interval": 240,
+        "candles": 721,
+        "from": "2026-03-04T20:00:00.000Z",
+        "to": "2026-07-02T20:00:00.000Z"
+      },
+      "strategy": "trend-following-ema-atr",
+      "costs": {
+        "feeRate": 0.0026,
+        "slippageBps": 5,
+        "spreadBps": 4
+      },
+      "fullSample": {
+        "netReturnPct": -6.109326357643841,
+        "annualizedReturnPct": -18.621027192438667,
+        "sharpeRatio": -4.921677456108169,
+        "sortinoRatio": -5.648573951659903,
+        "calmarRatio": -3.040598798222347,
+        "profitFactor": 0,
+        "winRatePct": 0,
+        "expectancy": -67.88140397382003,
+        "maxDrawdownPct": 6.124131603066227,
+        "recoveryFactor": -0.9974251695222607,
+        "avgHoldingCandles": 8,
+        "exposurePct": 10.895522388059701,
+        "totalTrades": 9,
+        "tradesPerYear": 29.417910447761194,
+        "totalFeesPaid": 95.03288870891664,
+        "grossProfit": 0,
+        "grossLoss": 610.9326357643803
+      },
+      "walkForward": {
+        "windows": [],
+        "outOfSample": null,
+        "windowConsistency": 0
+      },
+      "thresholdEvaluation": null
+    },
+    {
+      "dataset": {
+        "pair": "ETHUSD",
+        "interval": 60,
+        "candles": 721,
+        "from": "2026-06-02T23:00:00.000Z",
+        "to": "2026-07-02T23:00:00.000Z"
+      },
+      "strategy": "trend-following-ema-atr",
+      "costs": {
+        "feeRate": 0.0026,
+        "slippageBps": 5,
+        "spreadBps": 4
+      },
+      "fullSample": {
+        "netReturnPct": -0.05953590972127131,
+        "annualizedReturnPct": -0.7756180522513478,
+        "sharpeRatio": -0.05407862931903123,
+        "sortinoRatio": -0.08943518460767902,
+        "calmarRatio": -0.30175456722743665,
+        "profitFactor": 0.9739617295319309,
+        "winRatePct": 28.57142857142857,
+        "expectancy": -0.8505129960183524,
+        "maxDrawdownPct": 2.5703606058984803,
+        "recoveryFactor": -0.022910675277333897,
+        "avgHoldingCandles": 33.142857142857146,
+        "exposurePct": 34.776119402985074,
+        "totalTrades": 7,
+        "tradesPerYear": 91.5223880597015,
+        "totalFeesPaid": 90.68037655577174,
+        "grossProfit": 222.69412122632235,
+        "grossLoss": 228.64771219845082
+      },
+      "walkForward": {
+        "windows": [],
+        "outOfSample": null,
+        "windowConsistency": 0
+      },
+      "thresholdEvaluation": null
+    },
+    {
+      "dataset": {
+        "pair": "XBTUSD",
+        "interval": 1440,
+        "candles": 721,
+        "from": "2024-07-12T00:00:00.000Z",
+        "to": "2026-07-02T00:00:00.000Z"
+      },
+      "strategy": "trend-following-ema-atr",
+      "costs": {
+        "feeRate": 0.0026,
+        "slippageBps": 5,
+        "spreadBps": 4
+      },
+      "fullSample": {
+        "netReturnPct": -1.903139472543353,
+        "annualizedReturnPct": -1.0413180043844061,
+        "sharpeRatio": -0.6498382257637737,
+        "sortinoRatio": -0.8279697157588374,
+        "calmarRatio": -0.3189610139368404,
+        "profitFactor": 0.32852066459811347,
+        "winRatePct": 33.33333333333333,
+        "expectancy": -31.718991209055826,
+        "maxDrawdownPct": 3.2647187552225567,
+        "recoveryFactor": -0.5763551390762643,
+        "avgHoldingCandles": 18,
+        "exposurePct": 16.119402985074625,
+        "totalTrades": 6,
+        "tradesPerYear": 3.2686567164179103,
+        "totalFeesPaid": 37.958165712078554,
+        "grossProfit": 93.11092856917836,
+        "grossLoss": 283.4248758235133
+      },
+      "walkForward": {
+        "windows": [],
+        "outOfSample": null,
+        "windowConsistency": 0
+      },
+      "thresholdEvaluation": null
+    },
+    {
+      "dataset": {
+        "pair": "XBTUSD",
+        "interval": 240,
+        "candles": 721,
+        "from": "2026-03-04T20:00:00.000Z",
+        "to": "2026-07-02T20:00:00.000Z"
+      },
+      "strategy": "trend-following-ema-atr",
+      "costs": {
+        "feeRate": 0.0026,
+        "slippageBps": 5,
+        "spreadBps": 4
+      },
+      "fullSample": {
+        "netReturnPct": -2.258539230111237,
+        "annualizedReturnPct": -7.195061786946577,
+        "sharpeRatio": -2.9889354464524356,
+        "sortinoRatio": -3.635552534638284,
+        "calmarRatio": -2.884932883513243,
+        "profitFactor": 0,
+        "winRatePct": 0,
+        "expectancy": -56.463480752780626,
+        "maxDrawdownPct": 2.4940135793330835,
+        "recoveryFactor": -0.9034024823416226,
+        "avgHoldingCandles": 10.25,
+        "exposurePct": 6.119402985074627,
+        "totalTrades": 4,
+        "tradesPerYear": 13.074626865671643,
+        "totalFeesPaid": 51.11506499508624,
+        "grossProfit": 0,
+        "grossLoss": 225.8539230111225
+      },
+      "walkForward": {
+        "windows": [],
+        "outOfSample": null,
+        "windowConsistency": 0
+      },
+      "thresholdEvaluation": null
+    },
+    {
+      "dataset": {
+        "pair": "XBTUSD",
+        "interval": 60,
+        "candles": 721,
+        "from": "2026-06-02T23:00:00.000Z",
+        "to": "2026-07-02T23:00:00.000Z"
+      },
+      "strategy": "trend-following-ema-atr",
+      "costs": {
+        "feeRate": 0.0026,
+        "slippageBps": 5,
+        "spreadBps": 4
+      },
+      "fullSample": {
+        "netReturnPct": -0.5656793937557995,
+        "annualizedReturnPct": -7.1486586445180915,
+        "sharpeRatio": -1.3507818999511063,
+        "sortinoRatio": -2.0214353320926848,
+        "calmarRatio": -3.659022061017438,
+        "profitFactor": 0.5660690162720228,
+        "winRatePct": 33.33333333333333,
+        "expectancy": -9.427989895930057,
+        "maxDrawdownPct": 1.953707445680258,
+        "recoveryFactor": -0.28740826189786706,
+        "avgHoldingCandles": 32.166666666666664,
+        "exposurePct": 28.955223880597014,
+        "totalTrades": 6,
+        "tradesPerYear": 78.44776119402985,
+        "totalFeesPaid": 77.89812153427184,
+        "grossProfit": 73.79366534228343,
+        "grossLoss": 130.36160471786377
+      },
+      "walkForward": {
+        "windows": [],
+        "outOfSample": null,
+        "windowConsistency": 0
+      },
+      "thresholdEvaluation": null
+    }
+  ]
+}
