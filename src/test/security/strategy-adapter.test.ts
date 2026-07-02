@@ -1118,16 +1118,16 @@ describe('Strategy Engine: Safety Invariants', () => {
     expect(signal.riskScore).toBeDefined();
     expect(signal.confidence).toBeDefined();
     // No riskApproved / riskOverride fields
-    expect((signal as Record<string, unknown>).riskApproved).toBeUndefined();
-    expect((signal as Record<string, unknown>).riskOverride).toBeUndefined();
+    expect((signal as unknown as Record<string, unknown>).riskApproved).toBeUndefined();
+    expect((signal as unknown as Record<string, unknown>).riskOverride).toBeUndefined();
   });
 
   it('strategy does not interact with brokers', () => {
     // No broker credentials in signal
     const signal = createSignal();
-    expect((signal as Record<string, unknown>).brokerId).toBeUndefined();
-    expect((signal as Record<string, unknown>).credentials).toBeUndefined();
-    expect((signal as Record<string, unknown>).orderId).toBeUndefined();
+    expect((signal as unknown as Record<string, unknown>).brokerId).toBeUndefined();
+    expect((signal as unknown as Record<string, unknown>).credentials).toBeUndefined();
+    expect((signal as unknown as Record<string, unknown>).orderId).toBeUndefined();
   });
 
   it('aggregated signal tracks contributing strategies', () => {

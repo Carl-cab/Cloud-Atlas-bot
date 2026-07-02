@@ -8,7 +8,9 @@
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "fetch:data": "node scripts/fetch-historical-data.mjs",
+    "backtest": "vite-node scripts/run-backtest.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",
