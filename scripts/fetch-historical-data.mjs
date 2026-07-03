@@ -15,12 +15,12 @@
 //
 // --deep mode paginates Binance public klines (1000 candles/request) back to
 // 2017 for BTCUSDT/ETHUSDT at 1d and 4h. Binance is used as a DATA SOURCE
-// ONLY — no account, no keys, no trading integration. Basis risk vs Kraken
+// ONLY - no account, no keys, no trading integration. Basis risk vs Kraken
 // prices is small for BTC/ETH majors but nonzero; validate final candidates
 // on Kraken data before any go-live decision.
 //
 // NOTE: This script needs egress to api.kraken.com / api.binance.com.
-// Sandboxed CI environments may block it — run from a machine with network.
+// Sandboxed CI environments may block it - run from a machine with network.
 // =============================================================================
 
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -102,18 +102,18 @@ for (const pair of PAIRS) {
       };
       const file = path.join(OUT_DIR, `${pair}_${interval}m.json`);
       await writeFile(file, JSON.stringify(dataset));
-      console.log(`OK  ${pair} @ ${interval}m — ${candles.length} candles (${candles[0]?.t} → ${candles[candles.length - 1]?.t}) → ${file}`);
+      console.log(`OK  ${pair} @ ${interval}m - ${candles.length} candles (${candles[0]?.t} → ${candles[candles.length - 1]?.t}) → ${file}`);
       // Be polite to the public API
       await new Promise((r) => setTimeout(r, 1100));
     } catch (err) {
       failures++;
-      console.error(`FAIL ${pair} @ ${interval}m — ${err.message}`);
+      console.error(`FAIL ${pair} @ ${interval}m - ${err.message}`);
     }
   }
 }
 
 if (failures > 0) {
-  console.error(`\n${failures} fetch(es) failed. Backtests need real data — do not substitute synthetic candles.`);
+  console.error(`\n${failures} fetch(es) failed. Backtests need real data - do not substitute synthetic candles.`);
   process.exit(1);
 }
 console.log('\nDone. Run: npx vite-node scripts/run-backtest.ts');
