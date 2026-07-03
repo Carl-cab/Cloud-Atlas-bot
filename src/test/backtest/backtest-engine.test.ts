@@ -430,6 +430,10 @@ describe('walk-forward', () => {
     });
     expect(wf.windows).toHaveLength(0);
     expect(wf.outOfSample).toBeNull();
+    // Diagnostics: every skipped window reports why it was skipped
+    expect(wf.skippedWindows).toHaveLength(3);
+    expect(wf.skippedWindows[0].reason).toContain('minTrainTrades=1');
+    expect(wf.skippedWindows[0].reason).toContain('best: 0 trades');
   });
 });
 

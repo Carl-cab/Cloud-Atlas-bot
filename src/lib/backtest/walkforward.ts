@@ -41,8 +41,16 @@ export interface WalkForwardWindow<P> {
   testMetrics: PerformanceMetrics;
 }
 
+export interface SkippedWindow {
+  trainStart: number;
+  trainEnd: number;
+  reason: string;
+}
+
 export interface WalkForwardResult<P> {
   windows: Array<WalkForwardWindow<P>>;
+  /** Windows that produced no evaluation, with the reason (diagnostics) */
+  skippedWindows: SkippedWindow[];
   /** Metrics over the stitched out-of-sample equity curve — the number that matters */
   outOfSample: PerformanceMetrics | null;
   /** Fraction of windows with positive out-of-sample net return */
@@ -59,6 +67,7 @@ export function walkForward<P>(
 ): WalkForwardResult<P> {
   const { trainSize, testSize, minTrainTrades } = wfConfig;
   const windows: Array<WalkForwardWindow<P>> = [];
+  const skippedWindows: SkippedWindow[] = [];
 
   // Stitched OOS equity: compound each window's return onto running equity.
   let stitchedEquity = config.initialEquity;
@@ -80,12 +89,14 @@ export function walkForward<P>(
     let bestParams: P | null = null;
     let bestScore = -Infinity;
     let bestTrainMetrics: PerformanceMetrics | null = null;
+    let maxTradesSeen = 0;
 
     for (const params of paramGrid) {
       const strategy = makeStrategy(params);
       const trainSlice = candles.slice(trainStart, trainEnd);
       const result = runBacktest(strategy, trainSlice, config);
       const metrics = computeMetrics(result);
+      maxTradesSeen = Math.max(maxTradesSeen, metrics.totalTrades);
       if (metrics.totalTrades < minTrainTrades) continue;
       if (metrics.sharpeRatio > bestScore) {
         bestScore = metrics.sharpeRatio;
@@ -94,7 +105,14 @@ export function walkForward<P>(
       }
     }
 
-    if (bestParams === null || bestTrainMetrics === null) continue;
+    if (bestParams === null || bestTrainMetrics === null) {
+      skippedWindows.push({
+        trainStart,
+        trainEnd,
+        reason: `no param set reached minTrainTrades=${minTrainTrades} in-sample (best: ${maxTradesSeen} trades over ${trainSize} candles)`,
+      });
+      continue;
+    }
 
     // --- Evaluate on unseen test slice (warmup from train candles) ---
     const strategy = makeStrategy(bestParams);
@@ -160,6 +178,7 @@ export function walkForward<P>(
   const positiveWindows = windows.filter((w) => w.testMetrics.netReturnPct > 0).length;
   return {
     windows,
+    skippedWindows,
     outOfSample,
     windowConsistency: windows.length > 0 ? positiveWindows / windows.length : 0,
     totalOutOfSampleTrades: stitchedTradePnls.length,
