@@ -3,11 +3,16 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { applyRateLimit, rateLimitConfigs } from '../_shared/rateLimiter.ts';
 import { audit, auditLog, AuditCategory, AuditSeverity } from '../_shared/auditLogger.ts';
-import { useBrokerAdapters } from '../_shared/featureFlags.ts';
+import { useBrokerAdapters, useStrategyEngine } from '../_shared/featureFlags.ts';
 import { BrokerRegistry } from '../_shared/broker/registry.ts';
 import { PaperBrokerAdapter } from '../_shared/broker/adapters/paper.ts';
 import { KrakenBrokerAdapter } from '../_shared/broker/adapters/kraken.ts';
 import { emitBrokerAudit } from '../_shared/broker/audit.ts';
+import { StrategyRegistry } from '../_shared/strategy/registry.ts';
+import { StrategyPipeline } from '../_shared/strategy/pipeline.ts';
+import { VolatilityExpansionStrategy } from '../_shared/strategy/strategies/volatility-expansion.ts';
+import { emitStrategyAudit } from '../_shared/strategy/audit.ts';
+import type { MarketSnapshot } from '../_shared/strategy/types.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -37,6 +42,55 @@ function getBrokerRegistry(): BrokerRegistry {
     _brokerRegistry.register(paperAdapter, 50);
   }
   return _brokerRegistry;
+}
+
+// Strategy Engine pipeline — initialized lazily when USE_STRATEGY_ENGINE is on.
+// Registers ONLY the backtest-validated volatility-expansion strategy. This is
+// a zero-capital paper experiment; the wiring below hard-guards on paper mode.
+let _strategyPipeline: StrategyPipeline | null = null;
+function getStrategyPipeline(): StrategyPipeline {
+  if (!_strategyPipeline) {
+    const registry = new StrategyRegistry();
+    registry.register(new VolatilityExpansionStrategy(), 10, 1.0);
+    _strategyPipeline = new StrategyPipeline(registry, {
+      aggregator: {
+        method: 'weighted_confidence',
+        consensusThreshold: 0.5,
+        minimumConfidence: 0.3,
+        maximumRiskScore: 0.9,
+      },
+      timeoutMs: 5000,
+      failOpenOnTimeout: false,
+    });
+  }
+  return _strategyPipeline;
+}
+
+/** Build a Strategy Engine MarketSnapshot from an OHLC candle array. */
+function buildStrategySnapshot(symbol: string, ohlc: any[]): MarketSnapshot {
+  const candles = ohlc.map((c) => ({
+    timestamp: c.timestamp ?? new Date().toISOString(),
+    open: Number(c.open ?? 0),
+    high: Number(c.high ?? 0),
+    low: Number(c.low ?? 0),
+    close: Number(c.close ?? 0),
+    volume: Number(c.volume ?? 0),
+  }));
+  const last = candles[candles.length - 1] ?? { open: 0, high: 0, low: 0, close: 0, volume: 0, timestamp: new Date().toISOString() };
+  const first = candles[0] ?? last;
+  const price = last.close;
+  return {
+    symbol,
+    currentPrice: price,
+    bidPrice: price * 0.999,
+    askPrice: price * 1.001,
+    volume24h: candles.reduce((s, c) => s + c.volume, 0),
+    change24h: first.close > 0 ? ((price - first.close) / first.close) * 100 : 0,
+    high24h: candles.reduce((m, c) => Math.max(m, c.high), 0),
+    low24h: candles.reduce((m, c) => (c.low > 0 ? Math.min(m, c.low) : m), price),
+    ohlcv: candles,
+    timestamp: last.timestamp,
+  };
 }
 
 /**
@@ -914,7 +968,106 @@ serve(async (req) => {
 
         // Generate trading signal
         const signal = await mlEngine.generateSignal(symbol, analyzeMarketData, regime);
-        
+
+        // ---------------------------------------------------------------------
+        // Strategy Engine paper experiment (default OFF; PAPER MODE ONLY).
+        // Gated by USE_STRATEGY_ENGINE. Runs the backtest-validated
+        // volatility-expansion strategy and, on a bullish-expansion long
+        // signal, writes a paper buy signal to strategy_signals (which
+        // execute_trade reads). Hard-guards on bot mode so it can NEVER act
+        // in live mode. Wrapped so it can never break the analyze_market
+        // response. This is zero-capital forward-evidence gathering only.
+        // ---------------------------------------------------------------------
+        if (useStrategyEngine()) {
+          try {
+            const { data: seCfg } = await supabase
+              .from('bot_config')
+              .select('mode, capital_cad')
+              .eq('user_id', userId)
+              .maybeSingle();
+            const seMode = seCfg?.mode ?? 'paper';
+
+            if (seMode !== 'paper') {
+              // Hard safety guard: never run the experiment outside paper mode.
+              await emitStrategyAudit(supabase, {
+                userId,
+                action: 'STRATEGY_PIPELINE_EXECUTED',
+                details: { skipped: true, reason: `mode=${seMode} is not paper`, symbol },
+              });
+            } else {
+              const snapshot = buildStrategySnapshot(symbol, analyzeMarketData);
+              const { data: openPos } = await supabase
+                .from('trading_positions')
+                .select('id')
+                .eq('user_id', userId)
+                .eq('status', 'open');
+              const seContext = {
+                symbol,
+                accountEquity: Number(seCfg?.capital_cad ?? 10000),
+                openPositions: openPos?.length ?? 0,
+                maxPositions: 5,
+                riskBudgetRemaining: 1.0,
+              };
+
+              const pipeline = getStrategyPipeline();
+              await pipeline.initializeAll();
+              const pr = await pipeline.execute(snapshot, seContext);
+
+              for (const s of pr.individualSignals) {
+                await supabase.from('strategy_results').insert({
+                  user_id: userId,
+                  strategy_id: s.strategyId,
+                  symbol: s.symbol,
+                  direction: s.direction,
+                  strength: s.strength,
+                  confidence: s.confidence,
+                  risk_score: s.riskScore,
+                  reasoning: s.reasoning,
+                  indicators: s.indicators,
+                });
+              }
+
+              await emitStrategyAudit(supabase, {
+                userId,
+                action: 'STRATEGY_PIPELINE_EXECUTED',
+                strategyId: 'volatility-expansion',
+                details: {
+                  symbol,
+                  mode: seMode,
+                  succeeded: pr.succeededCount,
+                  failed: pr.failedCount,
+                  direction: pr.aggregatedSignal?.direction ?? 'none',
+                  confidence: pr.aggregatedSignal?.confidence ?? null,
+                  latencyMs: pr.latencyMs,
+                },
+              });
+
+              // Long-only spot: only a 'long' aggregate becomes a paper buy.
+              const agg = pr.aggregatedSignal;
+              if (agg && agg.direction === 'long') {
+                await supabase.from('strategy_signals').insert({
+                  symbol,
+                  signal_type: 'buy',
+                  strategy_type: 'volatility-expansion',
+                  confidence: agg.confidence,
+                  price: snapshot.currentPrice,
+                  timestamp: new Date().toISOString(),
+                  indicators: {},
+                  ml_score: agg.confidence,
+                });
+              }
+            }
+          } catch (stratErr) {
+            // Never let the experiment break the primary response.
+            await emitStrategyAudit(supabase, {
+              userId,
+              action: 'STRATEGY_ERROR',
+              strategyId: 'volatility-expansion',
+              details: { symbol, error: stratErr instanceof Error ? stratErr.message : String(stratErr) },
+            });
+          }
+        }
+
         return new Response(JSON.stringify({
           regime,
           signal,

@@ -45,6 +45,7 @@ export { MeanReversionStrategy } from './strategies/mean-reversion.ts';
 export { BreakoutStrategy } from './strategies/breakout.ts';
 export { TrendFollowingStrategy } from './strategies/trend-following.ts';
 export { AIHybridStrategy } from './strategies/ai-hybrid.ts';
+export { VolatilityExpansionStrategy } from './strategies/volatility-expansion.ts';
 
 // Audit
 export { emitStrategyAudit } from './audit.ts';

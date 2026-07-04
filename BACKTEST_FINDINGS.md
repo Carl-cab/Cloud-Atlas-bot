@@ -107,13 +107,40 @@ drawdowns at 1% risk-per-trade). Per the mandate ("Only strategies meeting
 minimum thresholds move to paper trading"), nothing graduates to paper
 trading without owner approval.
 
-## Next steps (decision required)
+## 2026-07-04 — Owner decision & execution
 
-1. **Owner decision:** keep the Sharpe 1.5 gate (= continue research, no
-   deployment) or approve a paper-trading exception for vol-expansion
-   BTC-daily to gather zero-capital forward evidence. Not self-approved.
-2. **Diversification breadth** (measurable, highest expected Sharpe lift):
-   fetch deep data for more Kraken-listed majors (SOL, XRP, LTC, ADA…) and
-   measure N-asset portfolio Sharpe as N grows.
-3. **Regime/vol filters** on the trend family — must be tested walk-forward.
-4. Re-validate any graduating strategy on Kraken data before go-live.
+**Decision:** Gate **held** (Sharpe > 1.5 stays required for real money) AND
+paper-trading exception **approved** for vol-expansion BTC-daily (zero
+capital). Both tracks below are now in motion.
+
+### Track A — Multi-asset diversification (research)
+Built N-asset portfolio tooling: correlation matrix, best-Sharpe-first
+diversification curve, full equal-weight portfolio metrics
+(`scripts/run-portfolio-backtest.ts`, pure math in `src/lib/backtest/portfolio.ts`,
+7 unit tests). Fetcher `--deep` default expanded to 8 majors
+(BTC/ETH/SOL/XRP/ADA/LTC/LINK/DOT).
+
+Early finding on the existing 2-asset (BTC+ETH) daily data: naive
+diversification **hurts** here — BTC alone OOS Sharpe 0.46; adding ETH (Sharpe
+−0.11, correlation 0.56) drags the equal-weight portfolio to 0.20. Breadth
+only helps with *low-correlation, positive-edge* assets — which is exactly
+what the wider basket will test. **Needs the user to run the deep fetch for
+the 8-asset basket, then `run-portfolio-backtest.ts`.**
+
+### Track B — Vol-expansion paper experiment (built, not yet deployed)
+Wired the validated strategy into `trading-bot` behind `USE_STRATEGY_ENGINE`
+(default OFF, paper-mode hard-guarded). Deployed adapter's entry/stop logic is
+pinned to the backtest by a parity test. Known deviation: time-based exit not
+yet honored (documented). See `STRATEGY_ENGINE_PAPER_EXPERIMENT.md` for the
+deploy/preview/enable runbook and safety guarantees. **Not runtime-verified in
+sandbox — user must preview-test before enabling.**
+
+## Remaining next steps
+
+1. **User runs the deep 8-asset fetch + portfolio measurement** (Track A) and
+   pushes the data; I analyze whether breadth lifts Sharpe toward the gate.
+2. **User preview-tests + enables the paper experiment** (Track B runbook).
+3. **Add the max-hold time-exit** to `execute_trade` to make the paper
+   experiment a faithful replica (currently entry+stop only).
+4. **Regime/vol filters** on the trend family — tested walk-forward.
+5. Re-validate any graduating strategy on Kraken data before go-live.
