@@ -1,0 +1,274 @@
+{
+  "generatedAt": "2026-07-04T02:07:35.022Z",
+  "interval": 1440,
+  "strategy": "trend-following-ema-atr",
+  "thresholds": {
+    "minProfitFactor": 1.5,
+    "minSharpe": 1.5,
+    "maxDrawdownPct": 25,
+    "minTrades": 30,
+    "minNetReturnPct": 0
+  },
+  "perAsset": [
+    {
+      "pair": "ADAUSDT",
+      "sharpe": 0.6963846655160731,
+      "netReturnPct": 12.066626273193233,
+      "maxDrawdownPct": 4.763949738554814,
+      "oosTrades": 11
+    },
+    {
+      "pair": "BTCUSDT",
+      "sharpe": 0.46152837576269545,
+      "netReturnPct": 6.277590571398468,
+      "maxDrawdownPct": 3.6150319692182324,
+      "oosTrades": 18
+    },
+    {
+      "pair": "DOTUSDT",
+      "sharpe": -1.05077995196561,
+      "netReturnPct": -5.543678614538767,
+      "maxDrawdownPct": 6.890757619556462,
+      "oosTrades": 13
+    },
+    {
+      "pair": "ETHUSDT",
+      "sharpe": -0.10852417340668898,
+      "netReturnPct": -1.5909318160323527,
+      "maxDrawdownPct": 6.577082681325526,
+      "oosTrades": 22
+    },
+    {
+      "pair": "LINKUSDT",
+      "sharpe": -0.13687428025331613,
+      "netReturnPct": -1.943400993916912,
+      "maxDrawdownPct": 4.164030861531742,
+      "oosTrades": 16
+    },
+    {
+      "pair": "LTCUSDT",
+      "sharpe": -0.6250106351027195,
+      "netReturnPct": -7.3181383976482,
+      "maxDrawdownPct": 10.798798547383191,
+      "oosTrades": 21
+    },
+    {
+      "pair": "SOLUSDT",
+      "sharpe": 0.6399315394858128,
+      "netReturnPct": 6.464683740037618,
+      "maxDrawdownPct": 2.7260127764844584,
+      "oosTrades": 11
+    },
+    {
+      "pair": "XRPUSDT",
+      "sharpe": 0.5614117308580846,
+      "netReturnPct": 17.35372366935213,
+      "maxDrawdownPct": 8.027523736658724,
+      "oosTrades": 23
+    }
+  ],
+  "correlationMatrix": [
+    [
+      1,
+      0.2394776601582393,
+      0.2817037432639079,
+      0.13510203370849225,
+      0.35835380897673846,
+      0.09444263253523033,
+      0.3121306911254909,
+      0.43160089266101886
+    ],
+    [
+      0.2394776601582393,
+      1,
+      0.33112770774527717,
+      0.5215638717711883,
+      0.22323044281082682,
+      0.11200670786116788,
+      0.4165312168063798,
+      0.19115936635244613
+    ],
+    [
+      0.2817037432639079,
+      0.33112770774527717,
+      1,
+      0.3433842864334934,
+      0.321840821471022,
+      0.253117958267056,
+      0.35894426123741136,
+      0.1259405683601627
+    ],
+    [
+      0.13510203370849225,
+      0.5215638717711883,
+      0.3433842864334934,
+      1,
+      0.18110996392020215,
+      0.06302950725503353,
+      0.29009209789630686,
+      0.07848675041898218
+    ],
+    [
+      0.35835380897673846,
+      0.22323044281082682,
+      0.321840821471022,
+      0.18110996392020215,
+      1,
+      0.2595009456250775,
+      0.1425964870959431,
+      0.400283917387565
+    ],
+    [
+      0.09444263253523033,
+      0.11200670786116788,
+      0.253117958267056,
+      0.06302950725503353,
+      0.2595009456250775,
+      1,
+      0.07238056675837408,
+      0.10806563729285194
+    ],
+    [
+      0.3121306911254909,
+      0.4165312168063798,
+      0.35894426123741136,
+      0.29009209789630686,
+      0.1425964870959431,
+      0.07238056675837408,
+      1,
+      0.10872949304338228
+    ],
+    [
+      0.43160089266101886,
+      0.19115936635244613,
+      0.1259405683601627,
+      0.07848675041898218,
+      0.400283917387565,
+      0.10806563729285194,
+      0.10872949304338228,
+      1
+    ]
+  ],
+  "averagePairwiseCorrelation": 0.24128335850854535,
+  "diversificationCurve": [
+    {
+      "n": 1,
+      "assets": [
+        "ADAUSDT"
+      ],
+      "sharpe": 0.6963846655160731,
+      "netReturnPct": 12.066626273193233,
+      "maxDrawdownPct": 4.763949738554814
+    },
+    {
+      "n": 2,
+      "assets": [
+        "ADAUSDT",
+        "SOLUSDT"
+      ],
+      "sharpe": 0.8543887067805199,
+      "netReturnPct": 7.809736187150465,
+      "maxDrawdownPct": 3.30445461121684
+    },
+    {
+      "n": 3,
+      "assets": [
+        "ADAUSDT",
+        "SOLUSDT",
+        "XRPUSDT"
+      ],
+      "sharpe": 0.9252169072273606,
+      "netReturnPct": 11.199614476478818,
+      "maxDrawdownPct": 3.303803815438793
+    },
+    {
+      "n": 4,
+      "assets": [
+        "ADAUSDT",
+        "SOLUSDT",
+        "XRPUSDT",
+        "BTCUSDT"
+      ],
+      "sharpe": 1.0043519604159035,
+      "netReturnPct": 10.313844295634372,
+      "maxDrawdownPct": 2.5409234322132783
+    },
+    {
+      "n": 5,
+      "assets": [
+        "ADAUSDT",
+        "SOLUSDT",
+        "XRPUSDT",
+        "BTCUSDT",
+        "ETHUSDT"
+      ],
+      "sharpe": 0.9074168044506205,
+      "netReturnPct": 8.085485780594135,
+      "maxDrawdownPct": 2.3060380459553893
+    },
+    {
+      "n": 6,
+      "assets": [
+        "ADAUSDT",
+        "SOLUSDT",
+        "XRPUSDT",
+        "BTCUSDT",
+        "ETHUSDT",
+        "LINKUSDT"
+      ],
+      "sharpe": 0.79516842201096,
+      "netReturnPct": 6.682093734360879,
+      "maxDrawdownPct": 2.3040557515203433
+    },
+    {
+      "n": 7,
+      "assets": [
+        "ADAUSDT",
+        "SOLUSDT",
+        "XRPUSDT",
+        "BTCUSDT",
+        "ETHUSDT",
+        "LINKUSDT",
+        "LTCUSDT"
+      ],
+      "sharpe": 0.6165006543110084,
+      "netReturnPct": 4.567343089757251,
+      "maxDrawdownPct": 2.2106914184983433
+    },
+    {
+      "n": 8,
+      "assets": [
+        "ADAUSDT",
+        "SOLUSDT",
+        "XRPUSDT",
+        "BTCUSDT",
+        "ETHUSDT",
+        "LINKUSDT",
+        "LTCUSDT",
+        "DOTUSDT"
+      ],
+      "sharpe": 0.4835773138253871,
+      "netReturnPct": 3.25440918651786,
+      "maxDrawdownPct": 2.3322422263722413
+    }
+  ],
+  "fullPortfolio": {
+    "netReturnPct": 3.25440918651786,
+    "annualizedReturnPct": 0.9145459277666967,
+    "sharpeRatio": 0.4835773138253871,
+    "sortinoRatio": 0.697289163794616,
+    "calmarRatio": 0.3921316222754682,
+    "profitFactor": 0,
+    "winRatePct": 0,
+    "expectancy": 0,
+    "maxDrawdownPct": 2.3322422263722413,
+    "recoveryFactor": 1.319900259860174,
+    "avgHoldingCandles": 0,
+    "exposurePct": 0,
+    "totalTrades": 0,
+    "tradesPerYear": 0,
+    "totalFeesPaid": 0,
+    "grossProfit": 0,
+    "grossLoss": 0
+  }
+}
