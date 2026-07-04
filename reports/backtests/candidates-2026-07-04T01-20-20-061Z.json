@@ -1,0 +1,1164 @@
+{
+  "generatedAt": "2026-07-04T01:20:20.061Z",
+  "thresholds": {
+    "minProfitFactor": 1.5,
+    "minSharpe": 1.5,
+    "maxDrawdownPct": 25,
+    "minTrades": 30,
+    "minNetReturnPct": 0
+  },
+  "results": [
+    {
+      "dataset": {
+        "pair": "BTCUSDT",
+        "interval": 1440,
+        "candles": 3243,
+        "from": "2017-08-17T00:00:00.000Z",
+        "to": "2026-07-03T00:00:00.000Z"
+      },
+      "strategy": "donchian-breakout",
+      "costs": {
+        "feeRate": 0.0026,
+        "slippageBps": 5,
+        "spreadBps": 4
+      },
+      "fullSample": {
+        "netReturnPct": 49.63932924005825,
+        "annualizedReturnPct": 4.72433217434125,
+        "sharpeRatio": 0.6352788469191825,
+        "sortinoRatio": 0.9548584541426732,
+        "calmarRatio": 0.3594384208444556,
+        "profitFactor": 4.981474006782786,
+        "winRatePct": 39.130434782608695,
+        "expectancy": 215.823170608949,
+        "maxDrawdownPct": 13.14364825897583,
+        "recoveryFactor": 2.309290938358907,
+        "avgHoldingCandles": 53.69565217391305,
+        "exposurePct": 38.75117665516159,
+        "totalTrades": 23,
+        "tradesPerYear": 2.634138688421713,
+        "totalFeesPaid": 172.46690153854948,
+        "grossProfit": 6210.690510655731,
+        "grossLoss": 1246.7575866499033
+      },
+      "walkForward": {
+        "windows": [
+          {
+            "params": {
+              "entryPeriod": 20,
+              "exitPeriod": 10,
+              "atrPeriod": 14,
+              "atrStopMultiple": 2
+            },
+            "inSampleSharpe": 1.6790934675230318,
+            "oosReturnPct": -1.03117812509945,
+            "oosTrades": 7
+          },
+          {
+            "params": {
+              "entryPeriod": 20,
+              "exitPeriod": 10,
+              "atrPeriod": 14,
+              "atrStopMultiple": 2
+            },
+            "inSampleSharpe": 1.5762796828379098,
+            "oosReturnPct": 2.0203846264356744,
+            "oosTrades": 10
+          },
+          {
+            "params": {
+              "entryPeriod": 20,
+              "exitPeriod": 10,
+              "atrPeriod": 14,
+              "atrStopMultiple": 2
+            },
+            "inSampleSharpe": 1.2882036529984802,
+            "oosReturnPct": 12.993816066872865,
+            "oosTrades": 7
+          },
+          {
+            "params": {
+              "entryPeriod": 55,
+              "exitPeriod": 10,
+              "atrPeriod": 14,
+              "atrStopMultiple": 2
+            },
+            "inSampleSharpe": 0.8296254061373342,
+            "oosReturnPct": -1.5863793559621426,
+            "oosTrades": 5
+          }
+        ],
+        "skippedWindows": [],
+        "outOfSample": {
+          "netReturnPct": 12.278148620906887,
+          "annualizedReturnPct": 2.1982111408490157,
+          "sharpeRatio": 0.46945433134593934,
+          "sortinoRatio": 0.7154971445950459,
+          "calmarRatio": 0.28441481604164964,
+          "profitFactor": 1.7526240501748618,
+          "winRatePct": 37.93103448275862,
+          "expectancy": 42.33844352036863,
+          "maxDrawdownPct": 7.728891101534985,
+          "recoveryFactor": 1.3581451423903905,
+          "avgHoldingCandles": 22.24137931034483,
+          "exposurePct": 33.23045267489712,
+          "totalTrades": 29,
+          "tradesPerYear": 5.4449588477366255,
+          "totalFeesPaid": 227.46671114025642,
+          "grossProfit": 2859.193585379461,
+          "grossLoss": 1631.3787232887712
+        },
+        "windowConsistency": 0.5
+      },
+      "thresholdEvaluation": {
+        "passed": false,
+        "checks": [
+          {
+            "name": "Profit Factor",
+            "passed": true,
+            "actual": 1.7526240501748618,
+            "required": 1.5
+          },
+          {
+            "name": "Sharpe Ratio",
+            "passed": false,
+            "actual": 0.46945433134593934,
+            "required": 1.5
+          },
+          {
+            "name": "Max Drawdown (≤)",
+            "passed": true,
+            "actual": 7.728891101534985,
+            "required": 25
+          },
+          {
+            "name": "Trade Count (≥)",
+            "passed": false,
+            "actual": 29,
+            "required": 30
+          },
+          {
+            "name": "Net Return After Costs (>)",
+            "passed": true,
+            "actual": 12.278148620906887,
+            "required": 0
+          },
+          {
+            "name": "Positive Expectancy (>)",
+            "passed": true,
+            "actual": 42.33844352036863,
+            "required": 0
+          }
+        ]
+      }
+    },
+    {
+      "dataset": {
+        "pair": "BTCUSDT",
+        "interval": 1440,
+        "candles": 3243,
+        "from": "2017-08-17T00:00:00.000Z",
+        "to": "2026-07-03T00:00:00.000Z"
+      },
+      "strategy": "volatility-expansion",
+      "costs": {
+        "feeRate": 0.0026,
+        "slippageBps": 5,
+        "spreadBps": 4
+      },
+      "fullSample": {
+        "netReturnPct": 44.744662895899786,
+        "annualizedReturnPct": 4.271460915007297,
+        "sharpeRatio": 1.1198196530085958,
+        "sortinoRatio": 2.0150410658880467,
+        "calmarRatio": 1.1720619504435097,
+        "profitFactor": 2.721544451839566,
+        "winRatePct": 58.2089552238806,
+        "expectancy": 66.78307894910407,
+        "maxDrawdownPct": 3.6443985860909236,
+        "recoveryFactor": 8.246319492320188,
+        "avgHoldingCandles": 9.373134328358208,
+        "exposurePct": 19.460799504183452,
+        "totalTrades": 67,
+        "tradesPerYear": 7.578246048961884,
+        "totalFeesPaid": 573.6356389124481,
+        "grossProfit": 7073.56635047353,
+        "grossLoss": 2599.1000608835598
+      },
+      "walkForward": {
+        "windows": [
+          {
+            "params": {
+              "atrPeriod": 14,
+              "expansionMultiple": 2,
+              "atrStopMultiple": 2,
+              "maxHoldCandles": 20
+            },
+            "inSampleSharpe": 1.7486827823337625,
+            "oosReturnPct": 5.992343483079785,
+            "oosTrades": 4
+          },
+          {
+            "params": {
+              "atrPeriod": 14,
+              "expansionMultiple": 2,
+              "atrStopMultiple": 2,
+              "maxHoldCandles": 20
+            },
+            "inSampleSharpe": 1.9288851739132185,
+            "oosReturnPct": 11.624873343570592,
+            "oosTrades": 11
+          },
+          {
+            "params": {
+              "atrPeriod": 14,
+              "expansionMultiple": 2,
+              "atrStopMultiple": 2,
+              "maxHoldCandles": 20
+            },
+            "inSampleSharpe": 1.9802822939975508,
+            "oosReturnPct": 3.616902527655298,
+            "oosTrades": 12
+          },
+          {
+            "params": {
+              "atrPeriod": 14,
+              "expansionMultiple": 2,
+              "atrStopMultiple": 3,
+              "maxHoldCandles": 20
+            },
+            "inSampleSharpe": 1.3510394958123977,
+            "oosReturnPct": 0.39174147385287755,
+            "oosTrades": 7
+          }
+        ],
+        "skippedWindows": [],
+        "outOfSample": {
+          "netReturnPct": 23.073362757183023,
+          "annualizedReturnPct": 3.9750057184235965,
+          "sharpeRatio": 1.0678547036700095,
+          "sortinoRatio": 1.9333947176087,
+          "calmarRatio": 1.2311235501972821,
+          "profitFactor": 2.348976826691666,
+          "winRatePct": 52.94117647058824,
+          "expectancy": 67.86283163877357,
+          "maxDrawdownPct": 3.228762635388316,
+          "recoveryFactor": 5.670549255816067,
+          "avgHoldingCandles": 16.176470588235293,
+          "exposurePct": 28.343621399176953,
+          "totalTrades": 34,
+          "tradesPerYear": 6.383744855967078,
+          "totalFeesPaid": 265.98948896823686,
+          "grossProfit": 4017.770606437669,
+          "grossLoss": 1710.4343307193697
+        },
+        "windowConsistency": 1
+      },
+      "thresholdEvaluation": {
+        "passed": false,
+        "checks": [
+          {
+            "name": "Profit Factor",
+            "passed": true,
+            "actual": 2.348976826691666,
+            "required": 1.5
+          },
+          {
+            "name": "Sharpe Ratio",
+            "passed": false,
+            "actual": 1.0678547036700095,
+            "required": 1.5
+          },
+          {
+            "name": "Max Drawdown (≤)",
+            "passed": true,
+            "actual": 3.228762635388316,
+            "required": 25
+          },
+          {
+            "name": "Trade Count (≥)",
+            "passed": true,
+            "actual": 34,
+            "required": 30
+          },
+          {
+            "name": "Net Return After Costs (>)",
+            "passed": true,
+            "actual": 23.073362757183023,
+            "required": 0
+          },
+          {
+            "name": "Positive Expectancy (>)",
+            "passed": true,
+            "actual": 67.86283163877357,
+            "required": 0
+          }
+        ]
+      }
+    },
+    {
+      "dataset": {
+        "pair": "BTCUSDT",
+        "interval": 240,
+        "candles": 19436,
+        "from": "2017-08-17T04:00:00.000Z",
+        "to": "2026-07-03T00:00:00.000Z"
+      },
+      "strategy": "donchian-breakout",
+      "costs": {
+        "feeRate": 0.0026,
+        "slippageBps": 5,
+        "spreadBps": 4
+      },
+      "fullSample": {
+        "netReturnPct": 98.57702701301668,
+        "annualizedReturnPct": 8.060481879032789,
+        "sharpeRatio": 0.969306149744737,
+        "sortinoRatio": 1.4147403139789816,
+        "calmarRatio": 0.5323490810554385,
+        "profitFactor": 1.9557906184955707,
+        "winRatePct": 36.29032258064516,
+        "expectancy": 79.49760242985202,
+        "maxDrawdownPct": 15.141346469598535,
+        "recoveryFactor": 3.027803516319065,
+        "avgHoldingCandles": 52.70967741935484,
+        "exposurePct": 33.72549019607843,
+        "totalTrades": 124,
+        "tradesPerYear": 14.012383900928791,
+        "totalFeesPaid": 2154.465584654173,
+        "grossProfit": 20171.366081695392,
+        "grossLoss": 10313.66338039374
+      },
+      "walkForward": {
+        "windows": [
+          {
+            "params": {
+              "entryPeriod": 20,
+              "exitPeriod": 20,
+              "atrPeriod": 14,
+              "atrStopMultiple": 4
+            },
+            "inSampleSharpe": 1.6261242686145043,
+            "oosReturnPct": -4.394194416666924,
+            "oosTrades": 29
+          },
+          {
+            "params": {
+              "entryPeriod": 55,
+              "exitPeriod": 10,
+              "atrPeriod": 14,
+              "atrStopMultiple": 2
+            },
+            "inSampleSharpe": 1.4284177941724336,
+            "oosReturnPct": 6.99104388689188,
+            "oosTrades": 21
+          },
+          {
+            "params": {
+              "entryPeriod": 55,
+              "exitPeriod": 10,
+              "atrPeriod": 14,
+              "atrStopMultiple": 2
+            },
+            "inSampleSharpe": 1.3141172951964044,
+            "oosReturnPct": 4.452349679445307,
+            "oosTrades": 30
+          },
+          {
+            "params": {
+              "entryPeriod": 55,
+              "exitPeriod": 20,
+              "atrPeriod": 14,
+              "atrStopMultiple": 2
+            },
+            "inSampleSharpe": 0.9110567524620724,
+            "oosReturnPct": -4.775161721357611,
+            "oosTrades": 22
+          }
+        ],
+        "skippedWindows": [],
+        "outOfSample": {
+          "netReturnPct": 1.741971253984393,
+          "annualizedReturnPct": 0.324889453006838,
+          "sharpeRatio": 0.08511817583795313,
+          "sortinoRatio": 0.12011880962104367,
+          "calmarRatio": 0.03198025531395128,
+          "profitFactor": 1.0367368943582023,
+          "winRatePct": 30.392156862745097,
+          "expectancy": 1.7078149548866193,
+          "maxDrawdownPct": 10.159063766608082,
+          "recoveryFactor": 0.15336621744671866,
+          "avgHoldingCandles": 33.1764705882353,
+          "exposurePct": 29.030874785591763,
+          "totalTrades": 102,
+          "tradesPerYear": 19.157804459691253,
+          "totalFeesPaid": 1134.1440401532843,
+          "grossProfit": 4915.945943355921,
+          "grossLoss": 4741.748817957487
+        },
+        "windowConsistency": 0.5
+      },
+      "thresholdEvaluation": {
+        "passed": false,
+        "checks": [
+          {
+            "name": "Profit Factor",
+            "passed": false,
+            "actual": 1.0367368943582023,
+            "required": 1.5
+          },
+          {
+            "name": "Sharpe Ratio",
+            "passed": false,
+            "actual": 0.08511817583795313,
+            "required": 1.5
+          },
+          {
+            "name": "Max Drawdown (≤)",
+            "passed": true,
+            "actual": 10.159063766608082,
+            "required": 25
+          },
+          {
+            "name": "Trade Count (≥)",
+            "passed": true,
+            "actual": 102,
+            "required": 30
+          },
+          {
+            "name": "Net Return After Costs (>)",
+            "passed": true,
+            "actual": 1.741971253984393,
+            "required": 0
+          },
+          {
+            "name": "Positive Expectancy (>)",
+            "passed": true,
+            "actual": 1.7078149548866193,
+            "required": 0
+          }
+        ]
+      }
+    },
+    {
+      "dataset": {
+        "pair": "BTCUSDT",
+        "interval": 240,
+        "candles": 19436,
+        "from": "2017-08-17T04:00:00.000Z",
+        "to": "2026-07-03T00:00:00.000Z"
+      },
+      "strategy": "volatility-expansion",
+      "costs": {
+        "feeRate": 0.0026,
+        "slippageBps": 5,
+        "spreadBps": 4
+      },
+      "fullSample": {
+        "netReturnPct": -6.654241866796074,
+        "annualizedReturnPct": -0.7735265906570699,
+        "sharpeRatio": -0.09267869023818308,
+        "sortinoRatio": -0.13807909215922665,
+        "calmarRatio": -0.048396658821685534,
+        "profitFactor": 0.957192491432172,
+        "winRatePct": 42.792792792792795,
+        "expectancy": -1.4987031231522296,
+        "maxDrawdownPct": 15.98305770460478,
+        "recoveryFactor": -0.3763674647074824,
+        "avgHoldingCandles": 9.065315315315315,
+        "exposurePct": 20.731204943357366,
+        "totalTrades": 444,
+        "tradesPerYear": 50.07003089598352,
+        "totalFeesPaid": 5365.912941774042,
+        "grossProfit": 14879.142851722707,
+        "grossLoss": 15544.567038402289
+      },
+      "walkForward": {
+        "windows": [
+          {
+            "params": {
+              "atrPeriod": 14,
+              "expansionMultiple": 1.5,
+              "atrStopMultiple": 3,
+              "maxHoldCandles": 20
+            },
+            "inSampleSharpe": 0.9899515347095894,
+            "oosReturnPct": -18.77829235846155,
+            "oosTrades": 91
+          },
+          {
+            "params": {
+              "atrPeriod": 14,
+              "expansionMultiple": 2,
+              "atrStopMultiple": 2,
+              "maxHoldCandles": 20
+            },
+            "inSampleSharpe": 0.09115505192306568,
+            "oosReturnPct": 5.030861365787014,
+            "oosTrades": 69
+          },
+          {
+            "params": {
+              "atrPeriod": 14,
+              "expansionMultiple": 2,
+              "atrStopMultiple": 3,
+              "maxHoldCandles": 20
+            },
+            "inSampleSharpe": 0.2689339513205123,
+            "oosReturnPct": -2.1149797946602593,
+            "oosTrades": 62
+          },
+          {
+            "params": {
+              "atrPeriod": 14,
+              "expansionMultiple": 2,
+              "atrStopMultiple": 2,
+              "maxHoldCandles": 20
+            },
+            "inSampleSharpe": -0.04957474432470123,
+            "oosReturnPct": -8.354373709381644,
+            "oosTrades": 56
+          }
+        ],
+        "skippedWindows": [],
+        "outOfSample": {
+          "netReturnPct": -23.472588904355298,
+          "annualizedReturnPct": -4.900479837783845,
+          "sharpeRatio": -0.7092205506891351,
+          "sortinoRatio": -1.0147062334876813,
+          "calmarRatio": -0.1993680372839155,
+          "profitFactor": 0.7680315157325552,
+          "winRatePct": 37.05035971223021,
+          "expectancy": -8.44337730372488,
+          "maxDrawdownPct": 24.580067620393848,
+          "recoveryFactor": -0.9460282972956963,
+          "avgHoldingCandles": 16.47841726618705,
+          "exposurePct": 39.313893653516296,
+          "totalTrades": 278,
+          "tradesPerYear": 52.21440823327615,
+          "totalFeesPaid": 2557.3120770016653,
+          "grossProfit": 7771.61091141772,
+          "grossLoss": 10118.869801853234
+        },
+        "windowConsistency": 0.25
+      },
+      "thresholdEvaluation": {
+        "passed": false,
+        "checks": [
+          {
+            "name": "Profit Factor",
+            "passed": false,
+            "actual": 0.7680315157325552,
+            "required": 1.5
+          },
+          {
+            "name": "Sharpe Ratio",
+            "passed": false,
+            "actual": -0.7092205506891351,
+            "required": 1.5
+          },
+          {
+            "name": "Max Drawdown (≤)",
+            "passed": true,
+            "actual": 24.580067620393848,
+            "required": 25
+          },
+          {
+            "name": "Trade Count (≥)",
+            "passed": true,
+            "actual": 278,
+            "required": 30
+          },
+          {
+            "name": "Net Return After Costs (>)",
+            "passed": false,
+            "actual": -23.472588904355298,
+            "required": 0
+          },
+          {
+            "name": "Positive Expectancy (>)",
+            "passed": false,
+            "actual": -8.44337730372488,
+            "required": 0
+          }
+        ]
+      }
+    },
+    {
+      "dataset": {
+        "pair": "ETHUSDT",
+        "interval": 1440,
+        "candles": 3243,
+        "from": "2017-08-17T00:00:00.000Z",
+        "to": "2026-07-03T00:00:00.000Z"
+      },
+      "strategy": "donchian-breakout",
+      "costs": {
+        "feeRate": 0.0026,
+        "slippageBps": 5,
+        "spreadBps": 4
+      },
+      "fullSample": {
+        "netReturnPct": 52.24335592332072,
+        "annualizedReturnPct": 4.931458604291716,
+        "sharpeRatio": 0.6371578346377752,
+        "sortinoRatio": 0.8851509016394478,
+        "calmarRatio": 0.26285377909629976,
+        "profitFactor": 6.321205187897755,
+        "winRatePct": 52.38095238095239,
+        "expectancy": 248.77788534914617,
+        "maxDrawdownPct": 18.761223906486105,
+        "recoveryFactor": 1.667322186752165,
+        "avgHoldingCandles": 52.476190476190474,
+        "exposurePct": 34.577973015374965,
+        "totalTrades": 21,
+        "tradesPerYear": 2.405083150298086,
+        "totalFeesPaid": 114.67373405148383,
+        "grossProfit": 6206.1311457555685,
+        "grossLoss": 981.7955534234989
+      },
+      "walkForward": {
+        "windows": [
+          {
+            "params": {
+              "entryPeriod": 20,
+              "exitPeriod": 20,
+              "atrPeriod": 14,
+              "atrStopMultiple": 2
+            },
+            "inSampleSharpe": 1.0267290879017508,
+            "oosReturnPct": 2.8545732605270135,
+            "oosTrades": 4
+          },
+          {
+            "params": {
+              "entryPeriod": 20,
+              "exitPeriod": 10,
+              "atrPeriod": 14,
+              "atrStopMultiple": 2
+            },
+            "inSampleSharpe": 1.2050028705945885,
+            "oosReturnPct": -1.3264917641242948,
+            "oosTrades": 10
+          },
+          {
+            "params": {
+              "entryPeriod": 20,
+              "exitPeriod": 10,
+              "atrPeriod": 14,
+              "atrStopMultiple": 2
+            },
+            "inSampleSharpe": 1.0706911089662616,
+            "oosReturnPct": 5.208594763365751,
+            "oosTrades": 7
+          },
+          {
+            "params": {
+              "entryPeriod": 55,
+              "exitPeriod": 20,
+              "atrPeriod": 14,
+              "atrStopMultiple": 2
+            },
+            "inSampleSharpe": 0.5896992325989353,
+            "oosReturnPct": 3.773631477626904,
+            "oosTrades": 3
+          }
+        ],
+        "skippedWindows": [],
+        "outOfSample": {
+          "netReturnPct": 10.805778852357415,
+          "annualizedReturnPct": 1.9452308249168215,
+          "sharpeRatio": 0.36797861833221335,
+          "sortinoRatio": 0.530503084593323,
+          "calmarRatio": 0.25186559545588694,
+          "profitFactor": 1.8959055835875993,
+          "winRatePct": 50,
+          "expectancy": 45.02407855148954,
+          "maxDrawdownPct": 7.723289166969688,
+          "recoveryFactor": 1.2213321434928948,
+          "avgHoldingCandles": 26.833333333333332,
+          "exposurePct": 33.17901234567901,
+          "totalTrades": 24,
+          "tradesPerYear": 4.506172839506172,
+          "totalFeesPaid": 158.7306183472146,
+          "grossProfit": 2286.7070857131475,
+          "grossLoss": 1206.1292004773989
+        },
+        "windowConsistency": 0.75
+      },
+      "thresholdEvaluation": {
+        "passed": false,
+        "checks": [
+          {
+            "name": "Profit Factor",
+            "passed": true,
+            "actual": 1.8959055835875993,
+            "required": 1.5
+          },
+          {
+            "name": "Sharpe Ratio",
+            "passed": false,
+            "actual": 0.36797861833221335,
+            "required": 1.5
+          },
+          {
+            "name": "Max Drawdown (≤)",
+            "passed": true,
+            "actual": 7.723289166969688,
+            "required": 25
+          },
+          {
+            "name": "Trade Count (≥)",
+            "passed": false,
+            "actual": 24,
+            "required": 30
+          },
+          {
+            "name": "Net Return After Costs (>)",
+            "passed": true,
+            "actual": 10.805778852357415,
+            "required": 0
+          },
+          {
+            "name": "Positive Expectancy (>)",
+            "passed": true,
+            "actual": 45.02407855148954,
+            "required": 0
+          }
+        ]
+      }
+    },
+    {
+      "dataset": {
+        "pair": "ETHUSDT",
+        "interval": 1440,
+        "candles": 3243,
+        "from": "2017-08-17T00:00:00.000Z",
+        "to": "2026-07-03T00:00:00.000Z"
+      },
+      "strategy": "volatility-expansion",
+      "costs": {
+        "feeRate": 0.0026,
+        "slippageBps": 5,
+        "spreadBps": 4
+      },
+      "fullSample": {
+        "netReturnPct": 12.870835966774102,
+        "annualizedReturnPct": 1.3788647202907622,
+        "sharpeRatio": 0.4079150091490368,
+        "sortinoRatio": 0.6420867594690735,
+        "calmarRatio": 0.2585595924760846,
+        "profitFactor": 1.3776970268405708,
+        "winRatePct": 44.927536231884055,
+        "expectancy": 18.653385459092966,
+        "maxDrawdownPct": 5.332870101960344,
+        "recoveryFactor": 2.049973593849851,
+        "avgHoldingCandles": 8.73913043478261,
+        "exposurePct": 18.686086148125195,
+        "totalTrades": 69,
+        "tradesPerYear": 7.804462348930896,
+        "totalFeesPaid": 382.7364473052578,
+        "grossProfit": 4694.797995289043,
+        "grossLoss": 3407.7143986116275
+      },
+      "walkForward": {
+        "windows": [
+          {
+            "params": {
+              "atrPeriod": 14,
+              "expansionMultiple": 1.5,
+              "atrStopMultiple": 3,
+              "maxHoldCandles": 20
+            },
+            "inSampleSharpe": 1.4972489546593273,
+            "oosReturnPct": 1.0355505020549571,
+            "oosTrades": 12
+          },
+          {
+            "params": {
+              "atrPeriod": 14,
+              "expansionMultiple": 1.5,
+              "atrStopMultiple": 2,
+              "maxHoldCandles": 20
+            },
+            "inSampleSharpe": 1.1968502375204018,
+            "oosReturnPct": -1.7022459750159709,
+            "oosTrades": 18
+          },
+          {
+            "params": {
+              "atrPeriod": 14,
+              "expansionMultiple": 2,
+              "atrStopMultiple": 2,
+              "maxHoldCandles": 10
+            },
+            "inSampleSharpe": 1.0357873065272152,
+            "oosReturnPct": -0.07731575843067968,
+            "oosTrades": 15
+          },
+          {
+            "params": {
+              "atrPeriod": 14,
+              "expansionMultiple": 2,
+              "atrStopMultiple": 2,
+              "maxHoldCandles": 20
+            },
+            "inSampleSharpe": 0.4949223082501638,
+            "oosReturnPct": 0.16548053347578415,
+            "oosTrades": 9
+          }
+        ],
+        "skippedWindows": [],
+        "outOfSample": {
+          "netReturnPct": -0.5968887135582553,
+          "annualizedReturnPct": -0.11234280668797059,
+          "sharpeRatio": -0.011768962675341815,
+          "sortinoRatio": -0.017121707521878485,
+          "calmarRatio": -0.011389824840540208,
+          "profitFactor": 0.9788339975461527,
+          "winRatePct": 40.74074074074074,
+          "expectancy": -1.1053494695521693,
+          "maxDrawdownPct": 9.863435852683603,
+          "recoveryFactor": -0.05679069412090554,
+          "avgHoldingCandles": 12.925925925925926,
+          "exposurePct": 36.0082304526749,
+          "totalTrades": 54,
+          "tradesPerYear": 10.138888888888888,
+          "totalFeesPaid": 279.48562624302053,
+          "grossProfit": 2760.3462999510625,
+          "grossLoss": 2820.0351713068794
+        },
+        "windowConsistency": 0.5
+      },
+      "thresholdEvaluation": {
+        "passed": false,
+        "checks": [
+          {
+            "name": "Profit Factor",
+            "passed": false,
+            "actual": 0.9788339975461527,
+            "required": 1.5
+          },
+          {
+            "name": "Sharpe Ratio",
+            "passed": false,
+            "actual": -0.011768962675341815,
+            "required": 1.5
+          },
+          {
+            "name": "Max Drawdown (≤)",
+            "passed": true,
+            "actual": 9.863435852683603,
+            "required": 25
+          },
+          {
+            "name": "Trade Count (≥)",
+            "passed": true,
+            "actual": 54,
+            "required": 30
+          },
+          {
+            "name": "Net Return After Costs (>)",
+            "passed": false,
+            "actual": -0.5968887135582553,
+            "required": 0
+          },
+          {
+            "name": "Positive Expectancy (>)",
+            "passed": false,
+            "actual": -1.1053494695521693,
+            "required": 0
+          }
+        ]
+      }
+    },
+    {
+      "dataset": {
+        "pair": "ETHUSDT",
+        "interval": 240,
+        "candles": 19436,
+        "from": "2017-08-17T04:00:00.000Z",
+        "to": "2026-07-03T00:00:00.000Z"
+      },
+      "strategy": "donchian-breakout",
+      "costs": {
+        "feeRate": 0.0026,
+        "slippageBps": 5,
+        "spreadBps": 4
+      },
+      "fullSample": {
+        "netReturnPct": 60.77896932878293,
+        "annualizedReturnPct": 5.512652903204129,
+        "sharpeRatio": 0.699422531765797,
+        "sortinoRatio": 1.0087067332322588,
+        "calmarRatio": 0.4958070246958888,
+        "profitFactor": 1.553860399660459,
+        "winRatePct": 35.294117647058826,
+        "expectancy": 44.69041862410508,
+        "maxDrawdownPct": 11.118545378790072,
+        "recoveryFactor": 3.0219499801750302,
+        "avgHoldingCandles": 42.463235294117645,
+        "exposurePct": 29.80392156862745,
+        "totalTrades": 136,
+        "tradesPerYear": 15.368421052631577,
+        "totalFeesPaid": 1699.696157456422,
+        "grossProfit": 17051.59524495173,
+        "grossLoss": 10973.698312073435
+      },
+      "walkForward": {
+        "windows": [
+          {
+            "params": {
+              "entryPeriod": 55,
+              "exitPeriod": 10,
+              "atrPeriod": 14,
+              "atrStopMultiple": 4
+            },
+            "inSampleSharpe": 1.3645200838619673,
+            "oosReturnPct": -1.3706871481557392,
+            "oosTrades": 28
+          },
+          {
+            "params": {
+              "entryPeriod": 20,
+              "exitPeriod": 10,
+              "atrPeriod": 14,
+              "atrStopMultiple": 4
+            },
+            "inSampleSharpe": 1.1802702351259569,
+            "oosReturnPct": 1.743282474938136,
+            "oosTrades": 41
+          },
+          {
+            "params": {
+              "entryPeriod": 20,
+              "exitPeriod": 20,
+              "atrPeriod": 14,
+              "atrStopMultiple": 4
+            },
+            "inSampleSharpe": 0.8028226841627295,
+            "oosReturnPct": 6.425833627936761,
+            "oosTrades": 34
+          },
+          {
+            "params": {
+              "entryPeriod": 55,
+              "exitPeriod": 20,
+              "atrPeriod": 14,
+              "atrStopMultiple": 4
+            },
+            "inSampleSharpe": 0.4380116775832522,
+            "oosReturnPct": -1.4823949114934665,
+            "oosTrades": 21
+          }
+        ],
+        "skippedWindows": [],
+        "outOfSample": {
+          "netReturnPct": 5.21378849431514,
+          "annualizedReturnPct": 0.9591585727919405,
+          "sharpeRatio": 0.18870412181998947,
+          "sortinoRatio": 0.2753473238190457,
+          "calmarRatio": 0.10028773843757442,
+          "profitFactor": 1.0906066172388258,
+          "winRatePct": 30.64516129032258,
+          "expectancy": 4.204668140576774,
+          "maxDrawdownPct": 9.564066233171495,
+          "recoveryFactor": 0.46857509578777085,
+          "avgHoldingCandles": 34.354838709677416,
+          "exposurePct": 36.552315608919386,
+          "totalTrades": 124,
+          "tradesPerYear": 23.289879931389365,
+          "totalFeesPaid": 932.034727419044,
+          "grossProfit": 6275.692003593764,
+          "grossLoss": 5754.313154162245
+        },
+        "windowConsistency": 0.5
+      },
+      "thresholdEvaluation": {
+        "passed": false,
+        "checks": [
+          {
+            "name": "Profit Factor",
+            "passed": false,
+            "actual": 1.0906066172388258,
+            "required": 1.5
+          },
+          {
+            "name": "Sharpe Ratio",
+            "passed": false,
+            "actual": 0.18870412181998947,
+            "required": 1.5
+          },
+          {
+            "name": "Max Drawdown (≤)",
+            "passed": true,
+            "actual": 9.564066233171495,
+            "required": 25
+          },
+          {
+            "name": "Trade Count (≥)",
+            "passed": true,
+            "actual": 124,
+            "required": 30
+          },
+          {
+            "name": "Net Return After Costs (>)",
+            "passed": true,
+            "actual": 5.21378849431514,
+            "required": 0
+          },
+          {
+            "name": "Positive Expectancy (>)",
+            "passed": true,
+            "actual": 4.204668140576774,
+            "required": 0
+          }
+        ]
+      }
+    },
+    {
+      "dataset": {
+        "pair": "ETHUSDT",
+        "interval": 240,
+        "candles": 19436,
+        "from": "2017-08-17T04:00:00.000Z",
+        "to": "2026-07-03T00:00:00.000Z"
+      },
+      "strategy": "volatility-expansion",
+      "costs": {
+        "feeRate": 0.0026,
+        "slippageBps": 5,
+        "spreadBps": 4
+      },
+      "fullSample": {
+        "netReturnPct": 5.901899971499297,
+        "annualizedReturnPct": 0.6487543998024536,
+        "sharpeRatio": 0.12847029547225058,
+        "sortinoRatio": 0.194444826651225,
+        "calmarRatio": 0.04133425979231848,
+        "profitFactor": 1.0323669781518061,
+        "winRatePct": 42.517814726840854,
+        "expectancy": 1.4018764777908088,
+        "maxDrawdownPct": 15.695319162894931,
+        "recoveryFactor": 0.3057360568676661,
+        "avgHoldingCandles": 8.947743467933492,
+        "exposurePct": 19.402677651905254,
+        "totalTrades": 421,
+        "tradesPerYear": 47.47631307929969,
+        "totalFeesPaid": 4942.600127280431,
+        "grossProfit": 18824.514943452978,
+        "grossLoss": 18234.324946303055
+      },
+      "walkForward": {
+        "windows": [
+          {
+            "params": {
+              "atrPeriod": 14,
+              "expansionMultiple": 2,
+              "atrStopMultiple": 3,
+              "maxHoldCandles": 20
+            },
+            "inSampleSharpe": 0.9391961566302839,
+            "oosReturnPct": -5.151191311069106,
+            "oosTrades": 49
+          },
+          {
+            "params": {
+              "atrPeriod": 14,
+              "expansionMultiple": 2,
+              "atrStopMultiple": 3,
+              "maxHoldCandles": 20
+            },
+            "inSampleSharpe": 1.1557680959644958,
+            "oosReturnPct": 11.99675790213299,
+            "oosTrades": 59
+          },
+          {
+            "params": {
+              "atrPeriod": 14,
+              "expansionMultiple": 2,
+              "atrStopMultiple": 3,
+              "maxHoldCandles": 20
+            },
+            "inSampleSharpe": 1.0370697285884427,
+            "oosReturnPct": -1.2543757275357195,
+            "oosTrades": 51
+          },
+          {
+            "params": {
+              "atrPeriod": 14,
+              "expansionMultiple": 2,
+              "atrStopMultiple": 2,
+              "maxHoldCandles": 20
+            },
+            "inSampleSharpe": 0.32855094323841616,
+            "oosReturnPct": -4.0837592071610755,
+            "oosTrades": 59
+          }
+        ],
+        "skippedWindows": [],
+        "outOfSample": {
+          "netReturnPct": 0.611434324321799,
+          "annualizedReturnPct": 0.11455648372900029,
+          "sharpeRatio": 0.05000666823444044,
+          "sortinoRatio": 0.07605216297652878,
+          "calmarRatio": 0.008337892180631433,
+          "profitFactor": 1.0064796010519528,
+          "winRatePct": 41.284403669724774,
+          "expectancy": 0.2804744606981071,
+          "maxDrawdownPct": 13.739261823882792,
+          "recoveryFactor": 0.038656185317838654,
+          "avgHoldingCandles": 16.880733944954127,
+          "exposurePct": 31.57804459691252,
+          "totalTrades": 218,
+          "tradesPerYear": 40.9451114922813,
+          "totalFeesPaid": 2216.589364347951,
+          "grossProfit": 9497.439269467235,
+          "grossLoss": 9436.295837035046
+        },
+        "windowConsistency": 0.25
+      },
+      "thresholdEvaluation": {
+        "passed": false,
+        "checks": [
+          {
+            "name": "Profit Factor",
+            "passed": false,
+            "actual": 1.0064796010519528,
+            "required": 1.5
+          },
+          {
+            "name": "Sharpe Ratio",
+            "passed": false,
+            "actual": 0.05000666823444044,
+            "required": 1.5
+          },
+          {
+            "name": "Max Drawdown (≤)",
+            "passed": true,
+            "actual": 13.739261823882792,
+            "required": 25
+          },
+          {
+            "name": "Trade Count (≥)",
+            "passed": true,
+            "actual": 218,
+            "required": 30
+          },
+          {
+            "name": "Net Return After Costs (>)",
+            "passed": true,
+            "actual": 0.611434324321799,
+            "required": 0
+          },
+          {
+            "name": "Positive Expectancy (>)",
+            "passed": true,
+            "actual": 0.2804744606981071,
+            "required": 0
+          }
+        ]
+      }
+    }
+  ]
+}

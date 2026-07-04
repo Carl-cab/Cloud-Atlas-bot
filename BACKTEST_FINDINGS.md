@@ -52,13 +52,68 @@ Round-trip execution cost at Kraken retail taker tier ≈ 0.62% of notional
   ~$16–38 fees per 2 years on a $10k account) — the trend family remains the
   most promising candidate class IF deep history can validate it.
 
-## Next steps (in order)
+## 2026-07-04 — Deep-history validation (Binance klines 2017-08 → 2026-07)
 
-1. Fetch deep daily/4h history: `node scripts/fetch-historical-data.mjs --deep`
-   (Binance public klines back to 2017 — data source only, no trading
-   integration; final candidates must be re-validated on Kraken data).
-2. Re-run candidates #1/#2 (trend family) on 8+ years of daily data.
-3. If trend family fails there too, proceed to candidates #4–#6 (Breakout,
-   Donchian, Volatility Expansion) on the same deep data.
-4. Any strategy that passes all thresholds on deep data graduates to paper
-   trading via the Strategy Engine (Phase 4 wiring — requires owner approval).
+**Data:** BTCUSDT + ETHUSDT at 1d (3,243 candles) and 4h (19,436 candles),
+fetched via `--deep`. Walk-forward: 40% train / 15% test rolling windows;
+OOS covers ~2021-03 → 2026-07. Full Kraken taker costs applied.
+**Reports:** `trend-following-2026-07-03T00-31-35-529Z.json`,
+`candidates-2026-07-04T01-20-20-061Z.json`
+
+### Candidate #1/#2 — Trend Following (EMA + ATR trail): FAIL (Sharpe)
+| Dataset | OOS net | Sharpe | PF | Trades | Consistency |
+|---|---|---|---|---|---|
+| BTC 1d | +6.3% | 0.46 | 2.05 | 18 | 100% |
+| BTC 4h | +14.4% | 0.56 | 1.43 | 85 | 50% |
+| ETH 1d | −1.6% | −0.11 | 0.84 | 22 | 50% |
+| ETH 4h | +15.4% | 0.48 | 1.29 | 127 | 75% |
+
+Real but weak edge: positive after costs on 3 of 4 datasets over ~5y OOS.
+Fails Sharpe (0.46–0.56 vs 1.5 required) and BTC-1d trade count.
+
+### Candidates #4/#5 — Donchian Breakout: FAIL (Sharpe)
+OOS: BTC 1d +12.3% (Sharpe 0.47, PF 1.75), ETH 1d +10.8% (0.37, PF 1.90),
+4h variants ≈ flat (PF 1.04–1.09). Same profile as trend following.
+
+### Candidate #6 — Volatility Expansion: FAIL (Sharpe only) — best result
+| Dataset | OOS net | Sharpe | PF | Trades | DD | Consistency |
+|---|---|---|---|---|---|---|
+| **BTC 1d** | **+23.1%** | **1.07** | **2.35** | **34** | **3.2%** | **100%** |
+| BTC 4h | −23.5% | −0.71 | 0.77 | 278 | 24.6% | 25% |
+| ETH 1d | −0.6% | −0.01 | 0.98 | 54 | 9.9% | 50% |
+| ETH 4h | +0.6% | 0.05 | 1.01 | 218 | 41% | 25% |
+
+BTC-daily passes 5 of 6 gates (fails Sharpe 1.07 < 1.5). Parameters stable
+across walk-forward windows (expansion=2, stop=2×ATR, hold=20 in 3/4).
+**Robustness caveats:** (a) edge is BTC-daily-specific — negative/flat on
+ETH and 4h; (b) cross-venue check on Kraken XBTUSD daily 2024–2026 with the
+same fixed params: only +1.0% net, Sharpe 0.17, PF 1.14 — the strong OOS
+years were 2021–2024, recent regime is marginal; (c) best-of-14 dataset ×
+strategy results carries selection bias.
+
+### Diversification measured (equal-weight, per-candle rebalanced, OOS)
+- BTC+ETH 4h trend portfolio: return corr 0.536 → Sharpe 0.56 → **0.59**,
+  DD 8.3% → 6.3%. Two correlated crypto assets barely move Sharpe.
+- Strategy blends on BTC 1d (trend/donchian/vol-exp, corr 0.44–0.65):
+  best blend Sharpe 0.96 < vol-exp alone 1.07. Blending averages down when
+  components are weaker and correlated.
+
+## Program verdict after all 6 mandated candidates
+
+**No strategy meets the production gate (Sharpe > 1.5 is the binding
+constraint everywhere).** The trend/breakout family shows a real, repeatable
+but weak edge on deep OOS data (PF 1.4–2.35, positive expectancy, tiny
+drawdowns at 1% risk-per-trade). Per the mandate ("Only strategies meeting
+minimum thresholds move to paper trading"), nothing graduates to paper
+trading without owner approval.
+
+## Next steps (decision required)
+
+1. **Owner decision:** keep the Sharpe 1.5 gate (= continue research, no
+   deployment) or approve a paper-trading exception for vol-expansion
+   BTC-daily to gather zero-capital forward evidence. Not self-approved.
+2. **Diversification breadth** (measurable, highest expected Sharpe lift):
+   fetch deep data for more Kraken-listed majors (SOL, XRP, LTC, ADA…) and
+   measure N-asset portfolio Sharpe as N grows.
+3. **Regime/vol filters** on the trend family — must be tested walk-forward.
+4. Re-validate any graduating strategy on Kraken data before go-live.

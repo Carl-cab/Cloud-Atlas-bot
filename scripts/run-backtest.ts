@@ -18,16 +18,22 @@ import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import {
   computeMetrics,
+  createDonchianBreakoutStrategy,
   createRsiMeanReversionStrategy,
   createTrendFollowingStrategy,
+  createVolatilityExpansionStrategy,
   DEFAULT_BACKTEST_CONFIG,
+  DEFAULT_DONCHIAN_PARAMS,
   DEFAULT_RSI_MR_PARAMS,
   DEFAULT_TREND_PARAMS,
+  DEFAULT_VOL_EXP_PARAMS,
+  DONCHIAN_PARAM_GRID,
   evaluateThresholds,
   PRODUCTION_THRESHOLDS,
   RSI_MR_PARAM_GRID,
   runBacktest,
   TREND_PARAM_GRID,
+  VOL_EXP_PARAM_GRID,
   walkForward,
   type BacktestConfig,
   type BacktestStrategy,
@@ -56,6 +62,18 @@ const CANDIDATES: Candidate[] = [
     defaultParams: DEFAULT_RSI_MR_PARAMS as unknown as Record<string, number>,
     grid: RSI_MR_PARAM_GRID as unknown as Array<Record<string, number>>,
     make: (p) => createRsiMeanReversionStrategy(p as never),
+  },
+  {
+    id: 'donchian-breakout',
+    defaultParams: DEFAULT_DONCHIAN_PARAMS as unknown as Record<string, number>,
+    grid: DONCHIAN_PARAM_GRID as unknown as Array<Record<string, number>>,
+    make: (p) => createDonchianBreakoutStrategy(p as never),
+  },
+  {
+    id: 'volatility-expansion',
+    defaultParams: DEFAULT_VOL_EXP_PARAMS as unknown as Record<string, number>,
+    grid: VOL_EXP_PARAM_GRID as unknown as Array<Record<string, number>>,
+    make: (p) => createVolatilityExpansionStrategy(p as never),
   },
 ];
 

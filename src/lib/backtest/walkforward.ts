@@ -18,6 +18,7 @@ import type {
   BacktestConfig,
   BacktestStrategy,
   Candle,
+  EquityPoint,
   PerformanceMetrics,
 } from './types';
 
@@ -53,6 +54,8 @@ export interface WalkForwardResult<P> {
   skippedWindows: SkippedWindow[];
   /** Metrics over the stitched out-of-sample equity curve — the number that matters */
   outOfSample: PerformanceMetrics | null;
+  /** The stitched OOS equity curve itself (for portfolio-level analysis) */
+  outOfSampleEquityCurve: EquityPoint[];
   /** Fraction of windows with positive out-of-sample net return */
   windowConsistency: number;
   totalOutOfSampleTrades: number;
@@ -180,6 +183,7 @@ export function walkForward<P>(
     windows,
     skippedWindows,
     outOfSample,
+    outOfSampleEquityCurve: stitchedCurve,
     windowConsistency: windows.length > 0 ? positiveWindows / windows.length : 0,
     totalOutOfSampleTrades: stitchedTradePnls.length,
   };

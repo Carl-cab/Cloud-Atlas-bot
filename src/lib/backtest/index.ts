@@ -17,3 +17,15 @@ export {
   RSI_MR_PARAM_GRID,
 } from './strategies/rsi-mean-reversion';
 export type { RsiMeanReversionParams } from './strategies/rsi-mean-reversion';
+export {
+  createDonchianBreakoutStrategy,
+  DEFAULT_DONCHIAN_PARAMS,
+  DONCHIAN_PARAM_GRID,
+} from './strategies/donchian-breakout';
+export type { DonchianBreakoutParams } from './strategies/donchian-breakout';
+export {
+  createVolatilityExpansionStrategy,
+  DEFAULT_VOL_EXP_PARAMS,
+  VOL_EXP_PARAM_GRID,
+} from './strategies/volatility-expansion';
+export type { VolatilityExpansionParams } from './strategies/volatility-expansion';
