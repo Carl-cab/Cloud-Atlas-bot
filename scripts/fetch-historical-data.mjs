@@ -29,7 +29,14 @@ import path from 'node:path';
 const args = process.argv.slice(2);
 const DEEP = args.includes('--deep');
 const pairArgs = args.filter((a) => !a.startsWith('--'));
-const PAIRS = pairArgs.length > 0 ? pairArgs : (DEEP ? ['BTCUSDT', 'ETHUSDT'] : ['XBTUSD', 'ETHUSD']);
+
+// Deep default: a diversified basket of liquid, Kraken-listed majors (fetched
+// from Binance for history depth). Newer listings (SOL/DOT/LINK/AVAX/MATIC)
+// simply return shorter histories — the fetcher takes whatever exists. More
+// low-correlation assets is the highest-EV lever for lifting portfolio Sharpe.
+const DEEP_DEFAULT = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT', 'ADAUSDT', 'LTCUSDT', 'LINKUSDT', 'DOTUSDT'];
+const RECENT_DEFAULT = ['XBTUSD', 'ETHUSD'];
+const PAIRS = pairArgs.length > 0 ? pairArgs : (DEEP ? DEEP_DEFAULT : RECENT_DEFAULT);
 const INTERVALS = DEEP ? [1440, 240] : [1440, 240, 60]; // minutes
 const OUT_DIR = path.join(process.cwd(), 'data', 'historical');
 

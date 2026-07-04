@@ -3,6 +3,13 @@ export * from './types';
 export * from './indicators';
 export { runBacktest } from './engine';
 export { computeMetrics, evaluateThresholds } from './metrics';
+export {
+  curveReturns,
+  pearson,
+  correlationMatrix,
+  alignByTimestamp,
+  equalWeightPortfolio,
+} from './portfolio';
 export { walkForward } from './walkforward';
 export type { SkippedWindow, WalkForwardConfig, WalkForwardResult, WalkForwardWindow } from './walkforward';
 export {
