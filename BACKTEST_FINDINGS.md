@@ -135,12 +135,62 @@ yet honored (documented). See `STRATEGY_ENGINE_PAPER_EXPERIMENT.md` for the
 deploy/preview/enable runbook and safety guarantees. **Not runtime-verified in
 sandbox — user must preview-test before enabling.**
 
+## 2026-07-04 — Diversification result (8-asset basket) + multi-edge lever
+
+**Report:** `reports/backtests/portfolio-1440m-2026-07-04T02-07-35-021Z.json`
+
+Per-asset trend OOS Sharpe (daily): ADA 0.70, SOL 0.64, XRP 0.56, BTC 0.46,
+then negative — ETH −0.11, LINK −0.14, LTC −0.63, DOT −1.05. **Only 4 of 8
+assets have any trend edge.**
+
+Diversification curve (equal-weight, best-Sharpe-first):
+N=1 → 0.70, N=2 → 0.85, N=3 → 0.93, **N=4 → 1.00 (peak)**, then decays as
+negative-edge assets are added: N=8 → 0.48. Average pairwise correlation fell
+to **0.241** (vs 0.56 for BTC+ETH) and full-basket max drawdown compressed to
+**2.3%** — diversification worked *mechanically* (less correlation, less
+drawdown) but **hit a ~1.0 Sharpe ceiling**.
+
+**Why the ceiling ≈ 1.0:** equal-weight portfolio Sharpe ≈
+`assetSharpe × √N / √(1 + (N−1)ρ)`. With per-asset Sharpe ~0.5 and ρ ≈ 0.24,
+the asymptote is ~`0.5/√0.24 ≈ 1.0`. **You cannot add assets to reach 1.5** —
+the binding constraint is per-asset edge strength, not breadth.
+
+### The lever that moved the needle: combine DIFFERENT edges
+`scripts/run-multi-edge-analysis.ts` — blend the top-4 trend portfolio
+(Sharpe 1.00) with the BTC vol-expansion stream (Sharpe 1.07). The two streams
+are only **0.339** correlated, so the equal-weight blend reaches
+**Sharpe 1.31** (net +14.1%, max DD 2.4%) — the best result of the program and
+the closest to the 1.5 gate.
+
+**⚠️ Selection-bias caveat:** the top-4 assets and the winning strategy were
+chosen *after* seeing their OOS results. The 1.31 is therefore OPTIMISTIC —
+evidence of *direction* (combining uncorrelated edges is the right lever), not
+an unbiased forward number. An honest gate test needs pre-committed
+combination rules validated on a fresh holdout.
+
+## Program status: honest synthesis
+
+Across 6 strategies, 8 assets, and multi-edge blending, the ranking of levers
+is now measured:
+- Single strategy, single asset: Sharpe ~0.5
+- Single strategy, diversified assets: ceiling ~1.0
+- **Multiple uncorrelated edges: ~1.3 (biased-optimistic)**
+
+The 1.5 gate is not cleared, but for the first time there is a *principled,
+measured path* toward it (stack genuinely uncorrelated edges), not just "try
+more of the same." Whether it clears 1.5 without overfitting is unknown and
+needs weeks of pre-committed walk-forward work — not a weekend, not guaranteed.
+
 ## Remaining next steps
 
-1. **User runs the deep 8-asset fetch + portfolio measurement** (Track A) and
-   pushes the data; I analyze whether breadth lifts Sharpe toward the gate.
-2. **User preview-tests + enables the paper experiment** (Track B runbook).
-3. **Add the max-hold time-exit** to `execute_trade` to make the paper
-   experiment a faithful replica (currently entry+stop only).
-4. **Regime/vol filters** on the trend family — tested walk-forward.
+1. **Decision (owner):** hold gate + fund a multi-edge research runway
+   (weeks), OR run the paper experiment for forward evidence and pause active
+   research, OR schedule the stop. All legitimate given the data.
+2. **Multi-edge research (if funded):** pre-commit a strategy/asset selection
+   rule, add more genuinely-different edges (vol-expansion on other assets,
+   a mean-reversion edge, other timeframes), validate on a fresh holdout,
+   re-measure blend Sharpe honestly.
+3. **Track B:** preview-test + enable the paper experiment (needs a preview
+   ref or explicit approval to use the current paper-only project).
+4. **Add the max-hold time-exit** to make the paper experiment faithful.
 5. Re-validate any graduating strategy on Kraken data before go-live.
