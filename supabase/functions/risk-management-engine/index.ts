@@ -416,7 +416,7 @@ class RiskManagementEngine {
     // 3. Record the halt in risk_cooldowns for scheduler-driven auto-resume
     const cooldownMs = 60 * 60 * 1000; // 1 hour default
     const resumeAt = new Date(Date.now() + cooldownMs).toISOString();
-    await supabaseService
+    const { error: cooldownError } = await supabaseService
       .from('risk_cooldowns')
       .upsert({
         user_id,
@@ -425,11 +425,14 @@ class RiskManagementEngine {
         resume_at: resumeAt,
         details: { triggered_by: 'risk-management-engine', reason },
         resolved: false,
-      }, { onConflict: 'user_id,reason' })
-      .then(({ error }) => {
-        if (error) console.error('Failed to write risk_cooldowns row:', error);
-        else actions_taken.push('cooldown_scheduled');
-      });
+      }, { onConflict: 'user_id,reason' });
+    if (cooldownError) {
+      // Pause is already committed. Throw so the caller knows no cooldown was recorded
+      // and the scheduler will not auto-resume — operator intervention required.
+      console.error('Failed to write risk_cooldowns row:', cooldownError);
+      throw new Error(`Circuit-breaker cooldown failed to persist: ${cooldownError.message}`);
+    }
+    actions_taken.push('cooldown_scheduled');
 
     console.log(`Circuit breaker triggered for user ${user_id}: ${reason}. Bot paused until ${resumeAt}.`);
 
