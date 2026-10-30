@@ -306,6 +306,7 @@ export type Database = {
           price: number
           quantity: number
           realized_pnl: number | null
+          reservation_status: 'pending' | 'confirmed' | 'failed' | 'unconfirmed'
           side: string
           symbol: string
           timestamp: string
@@ -321,6 +322,7 @@ export type Database = {
           price: number
           quantity: number
           realized_pnl?: number | null
+          reservation_status?: 'pending' | 'confirmed' | 'failed' | 'unconfirmed'
           side: string
           symbol: string
           timestamp: string
@@ -336,6 +338,7 @@ export type Database = {
           price?: number
           quantity?: number
           realized_pnl?: number | null
+          reservation_status?: 'pending' | 'confirmed' | 'failed' | 'unconfirmed'
           side?: string
           symbol?: string
           timestamp?: string

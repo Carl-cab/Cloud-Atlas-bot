@@ -224,6 +224,7 @@ class LiveTradingEngine {
         quantity: orderRequest.quantity,
         price: orderRequest.price || 0,
         kraken_order_id: null, // filled in after exchange confirms
+        reservation_status: 'pending', // lifecycle: pending → confirmed | failed | unconfirmed
         timestamp: new Date().toISOString(),
         fee: 0,
         realized_pnl: null,
@@ -231,7 +232,8 @@ class LiveTradingEngine {
 
     if (reservationError) {
       if (reservationError.code === '23505') {
-        // Unique violation: another request already reserved this client_order_id
+        // Unique violation: another request already reserved this client_order_id.
+        // Use reservation_status to apply the right retry policy.
         const { data: existingOrder } = await this.supabase
           .from('executed_trades')
           .select('*')
@@ -239,31 +241,42 @@ class LiveTradingEngine {
           .eq('client_order_id', clientOrderId)
           .maybeSingle();
         if (existingOrder) {
-          if (existingOrder.kraken_order_id === null) {
-            // Reservation exists but exchange has not confirmed yet (in-flight or failed pre-exchange).
-            // Return a distinct error so callers do not treat this as a filled order.
-            throw new Error(`Order ${clientOrderId} is already in progress or failed before exchange submission. Check order status before retrying.`);
+          const rs = existingOrder.reservation_status;
+          if (existingOrder.kraken_order_id) {
+            // Confirmed: return idempotently
+            console.log(`Idempotency hit: order ${clientOrderId} already confirmed`);
+            return { success: true, idempotent: true, order_id: existingOrder.kraken_order_id, order_data: existingOrder };
           }
-          console.log(`Idempotency hit: order ${clientOrderId} already confirmed`);
-          return { success: true, idempotent: true, order_id: existingOrder.kraken_order_id, order_data: existingOrder };
+          if (rs === 'failed') {
+            // Pre-exchange failure — safe to retry with a fresh INSERT.
+            // Delete the stale row first so the caller can resubmit.
+            await this.supabase
+              .from('executed_trades')
+              .delete()
+              .eq('client_order_id', clientOrderId)
+              .eq('user_id', orderRequest.user_id);
+            throw new Error(`Order ${clientOrderId} previously failed before exchange submission. Retry is safe — resubmit the request.`);
+          }
+          if (rs === 'unconfirmed') {
+            throw new Error(`Order ${clientOrderId} has an ambiguous outcome (possible network timeout). Do not retry until reconciliation confirms exchange state.`);
+          }
+          // rs === 'pending' (in-flight) or unknown
+          throw new Error(`Order ${clientOrderId} is already in progress. Wait for the current request to complete before retrying.`);
         }
       }
       throw new Error(`Failed to reserve order slot: ${reservationError.message}`);
     }
 
-    // Helper: clean up a failed reservation.
-    // executed_trades has no status column, so we DELETE the row on pre-exchange failures.
-    // This lets callers retry with the same client_order_id without hitting the 23505 guard.
-    // Network-timeout cases are NOT cleaned up (kraken_order_id stays null as a sentinel
-    // for reconciliation); those are handled in the catch block below.
+    // Mark the reservation as 'failed' so the caller can distinguish it from an in-flight
+    // order and safely retry with the same client_order_id.
     const markReservationFailed = async (reason: string) => {
       const { error } = await this.supabase
         .from('executed_trades')
-        .delete()
+        .update({ reservation_status: 'failed' })
         .eq('client_order_id', clientOrderId)
         .eq('user_id', orderRequest.user_id);
       if (error) {
-        console.error('Failed to clean up stale reservation row:', error, 'reason:', reason);
+        console.error('Failed to mark reservation as failed:', error, 'reason:', reason);
       }
     };
 
@@ -342,13 +355,19 @@ class LiveTradingEngine {
     } catch (error) {
       console.error('Order placement error:', error);
 
-      // Network/timeout errors (not explicit Kraken rejections) leave the reservation row
-      // in place with kraken_order_id = null as a sentinel for reconciliation.
-      // executed_trades has no status column, so we cannot mark it 'unconfirmed'.
-      // The caller must NOT retry with this client_order_id blindly —
-      // reconciliation must verify whether the order reached the exchange first.
+      // Network/timeout errors (not explicit Kraken rejections) → mark 'unconfirmed'.
+      // The order may have reached the exchange; reconciliation must resolve it.
+      // The caller must NOT retry with this client_order_id without verifying first.
       if (!(error.message?.startsWith('Order placement failed:'))) {
-        console.error(`AMBIGUOUS OUTCOME for order ${clientOrderId}: possible network/timeout before exchange response. Reservation row kept for reconciliation — do NOT retry without verifying exchange state.`);
+        const { error: unconfirmedError } = await this.supabase
+          .from('executed_trades')
+          .update({ reservation_status: 'unconfirmed' })
+          .eq('client_order_id', clientOrderId)
+          .eq('user_id', orderRequest.user_id);
+        if (unconfirmedError) {
+          console.error('Failed to mark reservation as unconfirmed:', unconfirmedError);
+        }
+        console.error(`AMBIGUOUS OUTCOME for order ${clientOrderId}: possible network/timeout. Marked unconfirmed — reconciliation required before retrying.`);
       }
 
       // Log failed order attempt
@@ -572,7 +591,7 @@ class LiveTradingEngine {
   private async updateReservation(clientOrderId: string, krakenOrderId: string, userId: string): Promise<void> {
     const { error } = await this.supabase
       .from('executed_trades')
-      .update({ kraken_order_id: krakenOrderId, status: 'pending' })
+      .update({ kraken_order_id: krakenOrderId, reservation_status: 'confirmed' })
       .eq('client_order_id', clientOrderId)
       .eq('user_id', userId);
     if (error) {
