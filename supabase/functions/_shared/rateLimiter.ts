@@ -49,6 +49,7 @@ export class RateLimiter {
     );
   }
 
+  // Checks request rate; returns allowed=false (fail-closed) when the DB is unreachable.
   async checkRateLimit(
     request: Request,
     config: RateLimitConfig,
@@ -192,6 +193,7 @@ export const rateLimitConfigs = {
   }
 };
 
+// Applies rate limiting: returns a 429 Response if the limit is exceeded, null if the request may proceed.
 export async function applyRateLimit(
   request: Request,
   config: RateLimitConfig,
