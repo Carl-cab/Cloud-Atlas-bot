@@ -300,6 +300,13 @@ serve(async (req) => {
         //   skip_verify    — if true, skip Kraken verification (for paper trading / testing only)
         const { amount, kraken_ref_id, reference_id, description, skip_verify = false } = body;
 
+        // skip_verify bypasses exchange confirmation — never permit from user requests
+        if (skip_verify === true) {
+          return new Response(JSON.stringify({ error: 'Deposit verification cannot be skipped' }), {
+            status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
         if (!amount || typeof amount !== 'number' || amount <= 0) {
           return new Response(JSON.stringify({ error: 'Invalid deposit amount' }), {
             status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }

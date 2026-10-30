@@ -57,17 +57,24 @@ async function getKrakenCredentials(
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${token}`,
     },
-    body: JSON.stringify({ action: 'get', key_type: 'kraken' }),
+    // 'exchange' matches the field name secure-credentials expects (not 'key_type')
+    body: JSON.stringify({ action: 'get', exchange: 'kraken' }),
   });
 
   if (!resp.ok) return null;
   const data = await resp.json();
-  if (!data.api_key || !data.private_key) return null;
-  return { api_key: data.api_key, private_key: data.private_key };
+  // secure-credentials returns { success, credentials: { api_key, api_secret } }
+  if (!data.success || !data.credentials?.api_key || !data.credentials?.api_secret) return null;
+  return { api_key: data.credentials.api_key, private_key: data.credentials.api_secret };
 }
 
 // ---------------------------------------------------------------------------
 // Helper: sign and call Kraken private API
+//
+// Correct HMAC-SHA512 algorithm:
+//   1. SHA256(nonce + postData) → raw 32-byte hash
+//   2. path = "/0/private/<endpoint>" as UTF-8 bytes
+//   3. HMAC-SHA512(path_bytes ++ sha256_bytes, base64decoded_private_key)
 // ---------------------------------------------------------------------------
 async function krakenPrivateRequest(
   endpoint: string,
@@ -77,18 +84,22 @@ async function krakenPrivateRequest(
 ): Promise<Record<string, unknown>> {
   const nonce = Date.now().toString();
   const postData = new URLSearchParams({ nonce, ...params }).toString();
-  const message = endpoint + await sha256(nonce + postData);
+  const path = `/0/private/${endpoint}`;
 
-  const keyBytes = base64ToBytes(privateKey);
-  const cryptoKey = await crypto.subtle.importKey(
-    'raw', keyBytes, { name: 'HMAC', hash: 'SHA-512' }, false, ['sign']
+  const encoder = new TextEncoder();
+  const messageHash = await crypto.subtle.digest('SHA-256', encoder.encode(nonce + postData));
+  const secretBytes = new Uint8Array(atob(privateKey).split('').map(c => c.charCodeAt(0)));
+  const key = await crypto.subtle.importKey(
+    'raw', secretBytes, { name: 'HMAC', hash: 'SHA-512' }, false, ['sign']
   );
-  const signature = await crypto.subtle.sign(
-    'HMAC', cryptoKey, new TextEncoder().encode(message)
-  );
-  const sigBase64 = bytesToBase64(new Uint8Array(signature));
+  const pathBytes = encoder.encode(path);
+  const combined = new Uint8Array(pathBytes.length + messageHash.byteLength);
+  combined.set(pathBytes);
+  combined.set(new Uint8Array(messageHash), pathBytes.length);
+  const sig = await crypto.subtle.sign('HMAC', key, combined);
+  const sigBase64 = btoa(String.fromCharCode(...new Uint8Array(sig)));
 
-  const response = await fetch(`https://api.kraken.com/0/private/${endpoint}`, {
+  const response = await fetch(`https://api.kraken.com${path}`, {
     method: 'POST',
     headers: {
       'API-Key': apiKey,
@@ -99,23 +110,6 @@ async function krakenPrivateRequest(
   });
 
   return await response.json();
-}
-
-async function sha256(message: string): Promise<string> {
-  const msgBuffer = new TextEncoder().encode(message);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
-  return String.fromCharCode(...new Uint8Array(hashBuffer));
-}
-
-function base64ToBytes(base64: string): Uint8Array {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes;
-}
-
-function bytesToBase64(bytes: Uint8Array): string {
-  return btoa(String.fromCharCode(...bytes));
 }
 
 // ---------------------------------------------------------------------------
@@ -132,6 +126,226 @@ function extractKrakenUsdBalance(balances: Record<string, string>): number {
 }
 
 // ---------------------------------------------------------------------------
+// Action dispatcher — called from both service-role and user-JWT paths
+// ---------------------------------------------------------------------------
+async function handleAction(
+  action: string,
+  body: Record<string, unknown>,
+  userId: string,
+  _token: string,
+  _req: Request
+): Promise<Response> {
+  switch (action) {
+
+    // -----------------------------------------------------------------------
+    case 'run_reconciliation': {
+      const { auto_adjust = false } = body as { auto_adjust?: boolean };
+
+      // 1. Fetch internal wallet balance
+      const { data: wallet, error: walletError } = await supabaseAdmin
+        .from('user_wallets')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('currency', 'USD')
+        .maybeSingle();
+
+      if (walletError || !wallet) {
+        return new Response(JSON.stringify({ error: 'Wallet not found' }), {
+          status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
+      const internalBalance =
+        Number(wallet.available_balance) + Number(wallet.locked_in_trades);
+
+      // 2. Fetch Kraken credentials — token is the caller's bearer (service-role or user JWT)
+      const credentials = await getKrakenCredentials(userId, _token);
+      if (!credentials) {
+        await supabaseAdmin.from('reconciliation_log').insert({
+          user_id:               userId,
+          kraken_balance_usd:    null,
+          internal_balance_usd:  internalBalance,
+          discrepancy_usd:       null,
+          status:                'error',
+          notes:                 'Could not fetch Kraken credentials',
+        });
+        return new Response(JSON.stringify({
+          error: 'Kraken credentials not configured. Please add your API keys in Settings.'
+        }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      // 3. Call Kraken Balance endpoint
+      let krakenBalanceUsd: number;
+      try {
+        const krakenResp = await krakenPrivateRequest(
+          'Balance', {}, credentials.api_key, credentials.private_key
+        );
+
+        if (krakenResp.error && Array.isArray(krakenResp.error) && krakenResp.error.length > 0) {
+          throw new Error(`Kraken API error: ${krakenResp.error.join(', ')}`);
+        }
+
+        krakenBalanceUsd = extractKrakenUsdBalance(
+          krakenResp.result as Record<string, string> ?? {}
+        );
+      } catch (krakenError) {
+        await supabaseAdmin.from('reconciliation_log').insert({
+          user_id:               userId,
+          kraken_balance_usd:    null,
+          internal_balance_usd:  internalBalance,
+          discrepancy_usd:       null,
+          status:                'error',
+          notes:                 `Kraken API call failed: ${krakenError.message}`,
+        });
+        return new Response(JSON.stringify({
+          error: 'Failed to fetch balance from Kraken',
+        }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      // 4. Calculate discrepancy
+      const discrepancy = Math.abs(krakenBalanceUsd - internalBalance);
+      const discrepancyRaw = krakenBalanceUsd - internalBalance;
+      const status = discrepancy > DISCREPANCY_THRESHOLD_USD ? 'discrepancy' : 'ok';
+
+      // 5. Log reconciliation result
+      await supabaseAdmin.from('reconciliation_log').insert({
+        user_id:               userId,
+        kraken_balance_usd:    krakenBalanceUsd,
+        internal_balance_usd:  internalBalance,
+        discrepancy_usd:       discrepancyRaw,
+        status,
+        notes: status === 'ok'
+          ? `Balances match within $${DISCREPANCY_THRESHOLD_USD} threshold`
+          : `Discrepancy of $${discrepancyRaw.toFixed(4)} detected`,
+      });
+
+      // 6. Handle discrepancy
+      if (status === 'discrepancy') {
+        // Activate kill switch to pause trading
+        await supabaseAdmin
+          .from('bot_config')
+          .update({
+            is_paused:     true,
+            paused_reason: `RECONCILIATION_DISCREPANCY: internal=$${internalBalance.toFixed(2)} kraken=$${krakenBalanceUsd.toFixed(2)} diff=$${discrepancyRaw.toFixed(4)}`,
+          })
+          .eq('user_id', userId);
+
+        await audit.killSwitchActivated(
+          supabaseAdmin, userId,
+          `Balance discrepancy: $${discrepancyRaw.toFixed(4)}`,
+          'circuit_breaker'
+        );
+
+        await auditLog(supabaseAdmin, {
+          userId,
+          action: 'RECONCILIATION_DISCREPANCY',
+          category: AuditCategory.RISK,
+          severity: AuditSeverity.CRITICAL,
+          details: {
+            internal_balance: internalBalance,
+            kraken_balance:   krakenBalanceUsd,
+            discrepancy:      discrepancyRaw,
+          }
+        });
+
+        return new Response(JSON.stringify({
+          success: false,
+          status: 'discrepancy',
+          internal_balance:  internalBalance,
+          kraken_balance:    krakenBalanceUsd,
+          discrepancy:       discrepancyRaw,
+          message: `CRITICAL: Balance discrepancy of $${discrepancyRaw.toFixed(4)} detected. Trading has been paused. Please review your account manually.`,
+        }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      // 7. Optional auto-adjustment for tiny rounding differences
+      if (auto_adjust && discrepancy > 0 && discrepancy <= SAFE_ADJUST_USD) {
+        const { data: walletRow } = await supabaseAdmin
+          .from('user_wallets')
+          .select('id, available_balance, total_deposited, total_withdrawn, total_realized_pnl, locked_in_trades, total_fees_paid')
+          .eq('user_id', userId)
+          .eq('currency', 'USD')
+          .single();
+
+        if (walletRow) {
+          await supabaseAdmin.from('transactions').insert({
+            user_id:          userId,
+            wallet_id:        walletRow.id,
+            transaction_type: 'reconciliation',
+            amount:           discrepancyRaw,
+            currency:         'USD',
+            balance_before:   Number(walletRow.available_balance),
+            balance_after:    Number(walletRow.available_balance) + discrepancyRaw,
+            description:      `Auto-reconciliation adjustment of $${discrepancyRaw.toFixed(4)}`,
+            metadata:         { kraken_balance: krakenBalanceUsd, internal_balance: internalBalance },
+          });
+
+          // Apply the adjustment to total_deposited (positive) or total_withdrawn (negative)
+          if (discrepancyRaw > 0) {
+            await supabaseAdmin
+              .from('user_wallets')
+              .update({ total_deposited: Number(walletRow.total_deposited) + discrepancyRaw })
+              .eq('id', walletRow.id);
+          } else {
+            await supabaseAdmin
+              .from('user_wallets')
+              .update({ total_withdrawn: Number(walletRow.total_withdrawn) + Math.abs(discrepancyRaw) })
+              .eq('id', walletRow.id);
+          }
+        }
+      }
+
+      await auditLog(supabaseAdmin, {
+        userId,
+        action: 'RECONCILIATION_OK',
+        category: AuditCategory.SYSTEM,
+        severity: AuditSeverity.INFO,
+        details: { internal_balance: internalBalance, kraken_balance: krakenBalanceUsd, discrepancy: discrepancyRaw }
+      });
+
+      return new Response(JSON.stringify({
+        success: true,
+        status: 'ok',
+        internal_balance:  internalBalance,
+        kraken_balance:    krakenBalanceUsd,
+        discrepancy:       discrepancyRaw,
+        auto_adjusted:     auto_adjust && discrepancy <= SAFE_ADJUST_USD,
+        message:           `Balances reconciled. Discrepancy: $${discrepancyRaw.toFixed(4)}`,
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    // -----------------------------------------------------------------------
+    case 'get_reconciliation_history': {
+      const { page = 1, per_page = 30 } = body as { page?: number; per_page?: number };
+      const offset = (page - 1) * per_page;
+
+      const { data: logs, count, error: logError } = await supabaseAdmin
+        .from('reconciliation_log')
+        .select('*', { count: 'exact' })
+        .eq('user_id', userId)
+        .order('reconciled_at', { ascending: false })
+        .range(offset, offset + per_page - 1);
+
+      if (logError) throw new Error(`Failed to fetch reconciliation log: ${logError.message}`);
+
+      return new Response(JSON.stringify({
+        success: true,
+        logs,
+        total: count,
+        page,
+        per_page
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    // -----------------------------------------------------------------------
+    default:
+      return new Response(JSON.stringify({ error: `Unknown action: ${action}` }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Serve handler
 // ---------------------------------------------------------------------------
 serve(async (req) => {
@@ -145,7 +359,7 @@ serve(async (req) => {
   );
 
   try {
-    // --- JWT Validation ---
+    // --- Auth: accept service-role token (for scheduler) or user JWT ---
     const authHeader = req.headers.get('authorization');
     if (!authHeader?.startsWith('Bearer ')) {
       await audit.authFailure(supabaseAdmin, null, 'Missing authorization header');
@@ -155,6 +369,27 @@ serve(async (req) => {
     }
 
     const token = authHeader.replace('Bearer ', '');
+    const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+    const isServiceRole = token === SERVICE_ROLE_KEY;
+
+    let userId: string;
+
+    if (isServiceRole) {
+      // Service-role path (called by scheduler-engine): trust user_id from body.
+      // Body is read below after action is determined — extract user_id here first.
+      const rawBody = await req.json();
+      const { action, user_id: bodyUserId } = rawBody;
+      if (!bodyUserId) {
+        return new Response(JSON.stringify({ error: 'user_id required for service-role calls' }), {
+          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+      userId = bodyUserId;
+      // Route directly to action handler using the parsed body
+      const effectiveAction = action === 'reconcile' ? 'run_reconciliation' : action;
+      return await handleAction(effectiveAction, rawBody, userId, token, req);
+    }
+
     const { data: { user }, error: authError } = await supabaseAuth.auth.getUser(token);
 
     if (authError || !user) {
@@ -168,217 +403,11 @@ serve(async (req) => {
     if (rateLimitResponse) return rateLimitResponse;
 
     const body = await req.json();
-    const { action } = body;
-    const userId = user.id;
-
-    switch (action) {
-
-      // -----------------------------------------------------------------------
-      case 'run_reconciliation': {
-        const { auto_adjust = false } = body;
-
-        // 1. Fetch internal wallet balance
-        const { data: wallet, error: walletError } = await supabaseAdmin
-          .from('user_wallets')
-          .select('*')
-          .eq('user_id', userId)
-          .eq('currency', 'USD')
-          .maybeSingle();
-
-        if (walletError || !wallet) {
-          return new Response(JSON.stringify({ error: 'Wallet not found' }), {
-            status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-          });
-        }
-
-        const internalBalance =
-          Number(wallet.available_balance) + Number(wallet.locked_in_trades);
-
-        // 2. Fetch Kraken credentials
-        const credentials = await getKrakenCredentials(userId, token);
-        if (!credentials) {
-          await supabaseAdmin.from('reconciliation_log').insert({
-            user_id:               userId,
-            kraken_balance_usd:    null,
-            internal_balance_usd:  internalBalance,
-            discrepancy_usd:       null,
-            status:                'error',
-            notes:                 'Could not fetch Kraken credentials',
-          });
-          return new Response(JSON.stringify({
-            error: 'Kraken credentials not configured. Please add your API keys in Settings.'
-          }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-        }
-
-        // 3. Call Kraken Balance endpoint
-        let krakenBalanceUsd: number;
-        try {
-          const krakenResp = await krakenPrivateRequest(
-            'Balance', {}, credentials.api_key, credentials.private_key
-          );
-
-          if (krakenResp.error && Array.isArray(krakenResp.error) && krakenResp.error.length > 0) {
-            throw new Error(`Kraken API error: ${krakenResp.error.join(', ')}`);
-          }
-
-          krakenBalanceUsd = extractKrakenUsdBalance(
-            krakenResp.result as Record<string, string> ?? {}
-          );
-        } catch (krakenError) {
-          await supabaseAdmin.from('reconciliation_log').insert({
-            user_id:               userId,
-            kraken_balance_usd:    null,
-            internal_balance_usd:  internalBalance,
-            discrepancy_usd:       null,
-            status:                'error',
-            notes:                 `Kraken API call failed: ${krakenError.message}`,
-          });
-          return new Response(JSON.stringify({
-            error: 'Failed to fetch balance from Kraken',
-          }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-        }
-
-        // 4. Calculate discrepancy
-        const discrepancy = Math.abs(krakenBalanceUsd - internalBalance);
-        const discrepancyRaw = krakenBalanceUsd - internalBalance;
-        const status = discrepancy > DISCREPANCY_THRESHOLD_USD ? 'discrepancy' : 'ok';
-
-        // 5. Log reconciliation result
-        await supabaseAdmin.from('reconciliation_log').insert({
-          user_id:               userId,
-          kraken_balance_usd:    krakenBalanceUsd,
-          internal_balance_usd:  internalBalance,
-          discrepancy_usd:       discrepancyRaw,
-          status,
-          notes: status === 'ok'
-            ? `Balances match within $${DISCREPANCY_THRESHOLD_USD} threshold`
-            : `Discrepancy of $${discrepancyRaw.toFixed(4)} detected`,
-        });
-
-        // 6. Handle discrepancy
-        if (status === 'discrepancy') {
-          // Activate kill switch to pause trading
-          await supabaseAdmin
-            .from('bot_config')
-            .update({
-              is_paused:     true,
-              paused_reason: `RECONCILIATION_DISCREPANCY: internal=$${internalBalance.toFixed(2)} kraken=$${krakenBalanceUsd.toFixed(2)} diff=$${discrepancyRaw.toFixed(4)}`,
-            })
-            .eq('user_id', userId);
-
-          await audit.killSwitchActivated(
-            supabaseAdmin, userId,
-            `Balance discrepancy: $${discrepancyRaw.toFixed(4)}`,
-            'circuit_breaker'
-          );
-
-          await auditLog(supabaseAdmin, {
-            userId,
-            action: 'RECONCILIATION_DISCREPANCY',
-            category: AuditCategory.RISK,
-            severity: AuditSeverity.CRITICAL,
-            details: {
-              internal_balance: internalBalance,
-              kraken_balance:   krakenBalanceUsd,
-              discrepancy:      discrepancyRaw,
-            }
-          });
-
-          return new Response(JSON.stringify({
-            success: false,
-            status: 'discrepancy',
-            internal_balance:  internalBalance,
-            kraken_balance:    krakenBalanceUsd,
-            discrepancy:       discrepancyRaw,
-            message: `CRITICAL: Balance discrepancy of $${discrepancyRaw.toFixed(4)} detected. Trading has been paused. Please review your account manually.`,
-          }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-        }
-
-        // 7. Optional auto-adjustment for tiny rounding differences
-        if (auto_adjust && discrepancy > 0 && discrepancy <= SAFE_ADJUST_USD) {
-          const { data: walletRow } = await supabaseAdmin
-            .from('user_wallets')
-            .select('id, available_balance, total_deposited, total_withdrawn, total_realized_pnl, locked_in_trades, total_fees_paid')
-            .eq('user_id', userId)
-            .eq('currency', 'USD')
-            .single();
-
-          if (walletRow) {
-            await supabaseAdmin.from('transactions').insert({
-              user_id:          userId,
-              wallet_id:        walletRow.id,
-              transaction_type: 'reconciliation',
-              amount:           discrepancyRaw,
-              currency:         'USD',
-              balance_before:   Number(walletRow.available_balance),
-              balance_after:    Number(walletRow.available_balance) + discrepancyRaw,
-              description:      `Auto-reconciliation adjustment of $${discrepancyRaw.toFixed(4)}`,
-              metadata:         { kraken_balance: krakenBalanceUsd, internal_balance: internalBalance },
-            });
-
-            // Apply the adjustment to total_deposited (positive) or total_withdrawn (negative)
-            if (discrepancyRaw > 0) {
-              await supabaseAdmin
-                .from('user_wallets')
-                .update({ total_deposited: Number(walletRow.total_deposited) + discrepancyRaw })
-                .eq('id', walletRow.id);
-            } else {
-              await supabaseAdmin
-                .from('user_wallets')
-                .update({ total_withdrawn: Number(walletRow.total_withdrawn) + Math.abs(discrepancyRaw) })
-                .eq('id', walletRow.id);
-            }
-          }
-        }
-
-        await auditLog(supabaseAdmin, {
-          userId,
-          action: 'RECONCILIATION_OK',
-          category: AuditCategory.SYSTEM,
-          severity: AuditSeverity.INFO,
-          details: { internal_balance: internalBalance, kraken_balance: krakenBalanceUsd, discrepancy: discrepancyRaw }
-        });
-
-        return new Response(JSON.stringify({
-          success: true,
-          status: 'ok',
-          internal_balance:  internalBalance,
-          kraken_balance:    krakenBalanceUsd,
-          discrepancy:       discrepancyRaw,
-          auto_adjusted:     auto_adjust && discrepancy <= SAFE_ADJUST_USD,
-          message:           `Balances reconciled. Discrepancy: $${discrepancyRaw.toFixed(4)}`,
-        }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-      }
-
-      // -----------------------------------------------------------------------
-      case 'get_reconciliation_history': {
-        const { page = 1, per_page = 30 } = body;
-        const offset = (page - 1) * per_page;
-
-        const { data: logs, count, error: logError } = await supabaseAdmin
-          .from('reconciliation_log')
-          .select('*', { count: 'exact' })
-          .eq('user_id', userId)
-          .order('reconciled_at', { ascending: false })
-          .range(offset, offset + per_page - 1);
-
-        if (logError) throw new Error(`Failed to fetch reconciliation log: ${logError.message}`);
-
-        return new Response(JSON.stringify({
-          success: true,
-          logs,
-          total: count,
-          page,
-          per_page
-        }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-      }
-
-      // -----------------------------------------------------------------------
-      default:
-        return new Response(JSON.stringify({ error: `Unknown action: ${action}` }), {
-          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
-    }
+    // Accept 'reconcile' as an alias for 'run_reconciliation' (used by older callers)
+    const rawAction = body.action;
+    const action = rawAction === 'reconcile' ? 'run_reconciliation' : rawAction;
+    userId = user.id;
+    return await handleAction(action, body, userId, token, req);
 
   } catch (error) {
     console.error('Reconciliation engine error:', error);

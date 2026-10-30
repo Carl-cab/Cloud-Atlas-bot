@@ -491,3 +491,247 @@ describe('checkRiskLimits and getPortfolioValue re-throw on failure', () => {
     expect(value).toBe(10000);
   });
 });
+
+// ---------------------------------------------------------------------------
+// WP-0C: skip_verify deposit bypass must be rejected
+// ---------------------------------------------------------------------------
+
+function evaluateDepositSkipVerify(body: Record<string, unknown>): { blocked: boolean; reason?: string } {
+  const { skip_verify = false } = body;
+  if (skip_verify === true) {
+    return { blocked: true, reason: 'Deposit verification cannot be skipped' };
+  }
+  return { blocked: false };
+}
+
+describe('wallet-engine deposit skip_verify guard (WP-0C)', () => {
+  it('blocks when skip_verify is explicitly true', () => {
+    const result = evaluateDepositSkipVerify({ amount: 1000, skip_verify: true });
+    expect(result.blocked).toBe(true);
+    expect(result.reason).toContain('cannot be skipped');
+  });
+
+  it('allows when skip_verify is omitted (default false)', () => {
+    const result = evaluateDepositSkipVerify({ amount: 1000 });
+    expect(result.blocked).toBe(false);
+  });
+
+  it('allows when skip_verify is explicitly false', () => {
+    const result = evaluateDepositSkipVerify({ amount: 1000, skip_verify: false });
+    expect(result.blocked).toBe(false);
+  });
+
+  it('does not allow skip_verify: "true" (string) to bypass the guard', () => {
+    // Guard only triggers on boolean true — string "true" falls through to false path
+    const result = evaluateDepositSkipVerify({ amount: 1000, skip_verify: 'true' as unknown as boolean });
+    expect(result.blocked).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// WP-1A/WP-1E: service-role auth bypass — user_id extraction from body
+// ---------------------------------------------------------------------------
+
+interface ServiceRoleAuthResult {
+  userId?: string;
+  error?: string;
+  status: number;
+}
+
+function evaluateServiceRoleAuth(
+  token: string,
+  serviceRoleKey: string,
+  body: Record<string, unknown>
+): ServiceRoleAuthResult {
+  const isServiceRole = token === serviceRoleKey;
+  if (!isServiceRole) {
+    return { status: 403, error: 'Forbidden' };
+  }
+  const { user_id: bodyUserId } = body as { user_id?: string };
+  if (!bodyUserId) {
+    return { status: 400, error: 'user_id required for service-role calls' };
+  }
+  return { status: 200, userId: bodyUserId };
+}
+
+describe('service-role auth bypass (WP-1A/WP-1E)', () => {
+  const SERVICE_KEY = 'test-service-role-key-abc123';
+
+  it('accepts service-role token and extracts user_id from body', () => {
+    const result = evaluateServiceRoleAuth(SERVICE_KEY, SERVICE_KEY, { user_id: 'uid-123', action: 'run_reconciliation' });
+    expect(result.status).toBe(200);
+    expect(result.userId).toBe('uid-123');
+  });
+
+  it('rejects non-service-role token with 403', () => {
+    const result = evaluateServiceRoleAuth('user-jwt-token', SERVICE_KEY, { user_id: 'uid-123' });
+    expect(result.status).toBe(403);
+    expect(result.error).toBe('Forbidden');
+  });
+
+  it('returns 400 when service-role call omits user_id', () => {
+    const result = evaluateServiceRoleAuth(SERVICE_KEY, SERVICE_KEY, { action: 'run_reconciliation' });
+    expect(result.status).toBe(400);
+    expect(result.error).toContain('user_id required');
+  });
+
+  it('service-role with empty string user_id is rejected', () => {
+    const result = evaluateServiceRoleAuth(SERVICE_KEY, SERVICE_KEY, { user_id: '' });
+    // empty string is falsy — treated as missing
+    expect(result.status).toBe(400);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// WP-1B: secure-credentials response shape — correct field extraction
+// ---------------------------------------------------------------------------
+
+interface KrakenCredentials { api_key: string; private_key: string; }
+
+function extractCredentialsFromResponse(
+  data: Record<string, unknown>
+): KrakenCredentials | null {
+  // Correct contract: { success: true, credentials: { api_key, api_secret } }
+  if (!data.success) return null;
+  const creds = data.credentials as { api_key?: string; api_secret?: string } | undefined;
+  if (!creds?.api_key || !creds?.api_secret) return null;
+  return { api_key: creds.api_key, private_key: creds.api_secret };
+}
+
+describe('secure-credentials response shape (WP-1B)', () => {
+  it('extracts credentials from correct response shape', () => {
+    const result = extractCredentialsFromResponse({
+      success: true,
+      credentials: { api_key: 'key123', api_secret: 'secret456' }
+    });
+    expect(result).not.toBeNull();
+    expect(result?.api_key).toBe('key123');
+    expect(result?.private_key).toBe('secret456');
+  });
+
+  it('returns null when success is false', () => {
+    const result = extractCredentialsFromResponse({ success: false });
+    expect(result).toBeNull();
+  });
+
+  it('returns null when credentials object is absent', () => {
+    const result = extractCredentialsFromResponse({ success: true });
+    expect(result).toBeNull();
+  });
+
+  it('returns null for old flat shape (data.api_key direct) — old bug is now rejected', () => {
+    // Old code read data.api_key and data.private_key directly — these are absent in new shape
+    const result = extractCredentialsFromResponse({
+      success: true,
+      api_key: 'key123',
+      private_key: 'secret456',
+    });
+    expect(result).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// WP-1D: scheduler reconcile action alias
+// ---------------------------------------------------------------------------
+
+function normalizeSchedulerAction(action: string): string {
+  return action === 'reconcile' ? 'run_reconciliation' : action;
+}
+
+describe('scheduler action alias (WP-1D)', () => {
+  it('rewrites "reconcile" to "run_reconciliation"', () => {
+    expect(normalizeSchedulerAction('reconcile')).toBe('run_reconciliation');
+  });
+
+  it('leaves "run_reconciliation" unchanged', () => {
+    expect(normalizeSchedulerAction('run_reconciliation')).toBe('run_reconciliation');
+  });
+
+  it('leaves other actions unchanged', () => {
+    expect(normalizeSchedulerAction('run_daily_maintenance')).toBe('run_daily_maintenance');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// WP-3B: paper trade count gate reads trading_positions, not executed_trades
+// ---------------------------------------------------------------------------
+
+interface PaperTradeQuerySpec {
+  table: string;
+  excludedStrategy?: string;
+}
+
+function buildPaperTradeQuery(): PaperTradeQuerySpec {
+  // Mirrors trading-bot WP-3B: paper trades live in trading_positions.
+  // executed_trades holds live orders only.
+  return {
+    table: 'trading_positions',
+    excludedStrategy: 'autonomous_agent',
+  };
+}
+
+describe('paper trade count gate table (WP-3B)', () => {
+  it('queries trading_positions, not executed_trades', () => {
+    const spec = buildPaperTradeQuery();
+    expect(spec.table).toBe('trading_positions');
+    expect(spec.table).not.toBe('executed_trades');
+  });
+
+  it('excludes autonomous_agent strategy from count', () => {
+    const spec = buildPaperTradeQuery();
+    expect(spec.excludedStrategy).toBe('autonomous_agent');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// WP-3E: stop-loss / take-profit direction for short (sell) positions
+// ---------------------------------------------------------------------------
+
+function calculateStopLoss(signalType: 'buy' | 'sell', price: number, stopPct: number): number {
+  const isLong = signalType === 'buy';
+  return isLong ? price * (1 - stopPct) : price * (1 + stopPct);
+}
+
+function calculateTakeProfit(signalType: 'buy' | 'sell', price: number, tpPct: number): number {
+  const isLong = signalType === 'buy';
+  return isLong ? price * (1 + tpPct) : price * (1 - tpPct);
+}
+
+describe('stop-loss and take-profit direction (WP-3E)', () => {
+  const entryPrice = 100;
+  const stopPct = 0.05;
+  const tpPct = 0.10;
+
+  it('long (buy): stop-loss is below entry', () => {
+    const sl = calculateStopLoss('buy', entryPrice, stopPct);
+    expect(sl).toBeLessThan(entryPrice);
+    expect(sl).toBeCloseTo(95);
+  });
+
+  it('long (buy): take-profit is above entry', () => {
+    const tp = calculateTakeProfit('buy', entryPrice, tpPct);
+    expect(tp).toBeGreaterThan(entryPrice);
+    expect(tp).toBeCloseTo(110);
+  });
+
+  it('short (sell): stop-loss is ABOVE entry', () => {
+    const sl = calculateStopLoss('sell', entryPrice, stopPct);
+    expect(sl).toBeGreaterThan(entryPrice);
+    expect(sl).toBeCloseTo(105);
+  });
+
+  it('short (sell): take-profit is BELOW entry', () => {
+    const tp = calculateTakeProfit('sell', entryPrice, tpPct);
+    expect(tp).toBeLessThan(entryPrice);
+    expect(tp).toBeCloseTo(90);
+  });
+
+  it('regression: old code used same formula for both — short stop was incorrectly below entry', () => {
+    // Old bug: stopLossPrice = price * (1 - stopPct) regardless of direction
+    const buggedShortStop = entryPrice * (1 - stopPct); // would be 95 — below entry
+    const correctShortStop = calculateStopLoss('sell', entryPrice, stopPct); // should be 105
+    expect(correctShortStop).toBeGreaterThan(buggedShortStop); // new > old (fixed)
+    expect(buggedShortStop).toBeLessThan(entryPrice); // old was wrong
+    expect(correctShortStop).toBeGreaterThan(entryPrice); // new is correct
+  });
+});

@@ -104,8 +104,18 @@ class KrakenAPI {
   }
 
   private async createSignature(endpoint: string, postData: string, nonce: number): Promise<string> {
-    // Simplified signature creation - implement proper HMAC-SHA512 in production
-    return btoa(`${nonce}${postData}${endpoint}`);
+    const encoder = new TextEncoder();
+    const messageHash = await crypto.subtle.digest('SHA-256', encoder.encode(nonce.toString() + postData));
+    const secretBytes = new Uint8Array(atob(this.privateKey).split('').map(c => c.charCodeAt(0)));
+    const key = await crypto.subtle.importKey(
+      'raw', secretBytes, { name: 'HMAC', hash: 'SHA-512' }, false, ['sign']
+    );
+    const pathBytes = encoder.encode(endpoint);
+    const combined = new Uint8Array(pathBytes.length + messageHash.byteLength);
+    combined.set(pathBytes);
+    combined.set(new Uint8Array(messageHash), pathBytes.length);
+    const sig = await crypto.subtle.sign('HMAC', key, combined);
+    return btoa(String.fromCharCode(...new Uint8Array(sig)));
   }
 }
 
@@ -1055,9 +1065,16 @@ serve(async (req) => {
 
         // Execute trade (paper trading mode)
         if (botConfig.mode === 'paper') {
-          // PHASE 2 FIX: Include stop_loss and take_profit prices in paper position
-          const stopLossPrice = latestSignal.price * (1 - riskEval.stopLossPct);
-          const takeProfitPrice = latestSignal.price * (1 + riskEval.takeProfitPct);
+          // Stop-loss and take-profit direction depends on side:
+          // For a long (buy): stop below entry, target above entry.
+          // For a short (sell): stop above entry, target below entry.
+          const isLong = latestSignal.signal_type === 'buy';
+          const stopLossPrice = isLong
+            ? latestSignal.price * (1 - riskEval.stopLossPct)
+            : latestSignal.price * (1 + riskEval.stopLossPct);
+          const takeProfitPrice = isLong
+            ? latestSignal.price * (1 + riskEval.takeProfitPct)
+            : latestSignal.price * (1 - riskEval.takeProfitPct);
 
           const position = {
             user_id: userId,
@@ -1095,10 +1112,14 @@ serve(async (req) => {
 
         const hasFailedChecks = !readinessChecks || readinessChecks.some(c => c.status === 'fail');
 
+        // Paper trades are recorded in trading_positions by the paper-trading path.
+        // executed_trades holds live orders only and must not be used for this gate.
+        // Exclude autonomous-agent positions to prevent gate bypass via agent requests.
         const { count: paperTradeCount } = await supabase
-          .from('executed_trades')
+          .from('trading_positions')
           .select('id', { count: 'exact', head: true })
-          .eq('user_id', userId);
+          .eq('user_id', userId)
+          .neq('strategy_used', 'autonomous_agent');
 
         const { count: failedReconciliations } = await supabase
           .from('reconciliation_log')

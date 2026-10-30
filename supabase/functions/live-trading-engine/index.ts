@@ -582,8 +582,6 @@ class LiveTradingEngine {
       }
     });
 
-    console.log('Secure credentials response:', { data, error });
-
     if (error) {
       console.error('Secure credentials function error:', error);
       throw new Error(`Failed to retrieve credentials: ${error.message || 'Unknown error'}`);
