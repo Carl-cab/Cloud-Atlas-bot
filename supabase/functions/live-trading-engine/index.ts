@@ -175,11 +175,12 @@ class LiveTradingEngine {
       .order('checked_at', { ascending: false })
       .limit(20);
 
+    // Paper trades are recorded in trading_positions by trading-bot, not in executed_trades.
+    // Counting executed_trades (live-order table) would always be zero for a paper-only account.
     const { count: paperTradeCount } = await this.supabase
-      .from('executed_trades')
+      .from('trading_positions')
       .select('id', { count: 'exact', head: true })
-      .eq('user_id', orderRequest.user_id)
-      .not('kraken_order_id', 'is', null);
+      .eq('user_id', orderRequest.user_id);
 
     const { count: failedReconciliations, error: reconError } = await this.supabase
       .from('reconciliation_log')
@@ -250,13 +251,20 @@ class LiveTradingEngine {
       throw new Error(`Failed to reserve order slot: ${reservationError.message}`);
     }
 
-    // Helper to mark the reservation as failed (called if we cannot reach exchange)
+    // Helper: clean up a failed reservation.
+    // executed_trades has no status column, so we DELETE the row on pre-exchange failures.
+    // This lets callers retry with the same client_order_id without hitting the 23505 guard.
+    // Network-timeout cases are NOT cleaned up (kraken_order_id stays null as a sentinel
+    // for reconciliation); those are handled in the catch block below.
     const markReservationFailed = async (reason: string) => {
-      await this.supabase
+      const { error } = await this.supabase
         .from('executed_trades')
-        .update({ status: 'failed', paused_reason: reason })
+        .delete()
         .eq('client_order_id', clientOrderId)
         .eq('user_id', orderRequest.user_id);
+      if (error) {
+        console.error('Failed to clean up stale reservation row:', error, 'reason:', reason);
+      }
     };
 
     let credentials: KrakenCredentials;
@@ -334,14 +342,13 @@ class LiveTradingEngine {
     } catch (error) {
       console.error('Order placement error:', error);
 
-      // If the error is a network/timeout (not a Kraken rejection), mark unconfirmed —
-      // the order may have reached the exchange; reconciliation must resolve it.
+      // Network/timeout errors (not explicit Kraken rejections) leave the reservation row
+      // in place with kraken_order_id = null as a sentinel for reconciliation.
+      // executed_trades has no status column, so we cannot mark it 'unconfirmed'.
+      // The caller must NOT retry with this client_order_id blindly —
+      // reconciliation must verify whether the order reached the exchange first.
       if (!(error.message?.startsWith('Order placement failed:'))) {
-        await this.supabase
-          .from('executed_trades')
-          .update({ status: 'unconfirmed' })
-          .eq('client_order_id', clientOrderId)
-          .eq('user_id', orderRequest.user_id);
+        console.error(`AMBIGUOUS OUTCOME for order ${clientOrderId}: possible network/timeout before exchange response. Reservation row kept for reconciliation — do NOT retry without verifying exchange state.`);
       }
 
       // Log failed order attempt
