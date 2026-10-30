@@ -77,9 +77,11 @@ export class RateLimiter {
 
     if (error) {
       console.error('Rate limit check error:', error);
-      // Fail open on DB errors to avoid blocking legitimate traffic,
-      // but log for monitoring
-      return { allowed: true, remaining: config.max, resetTime: now + config.windowMs };
+      // SECURITY FIX (Finding 6): Fail CLOSED on DB errors.
+      // Previously the rate limiter allowed all traffic when the DB was unreachable,
+      // which let an attacker bypass limits by triggering DB errors.
+      // Returning allowed=false is the safe default; legitimate traffic will retry.
+      return { allowed: false, remaining: 0, resetTime: now + config.windowMs, message: 'Rate limit service unavailable — please retry' };
     }
 
     const currentCount = entries?.length || 0;
