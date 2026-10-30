@@ -176,11 +176,13 @@ class LiveTradingEngine {
       .limit(20);
 
     // Paper trades are recorded in trading_positions by trading-bot, not in executed_trades.
-    // Counting executed_trades (live-order table) would always be zero for a paper-only account.
+    // Exclude autonomous-agent positions (strategy_used='autonomous_agent') so a user cannot
+    // satisfy the 50-trade gate by submitting autonomous-agent requests instead of real paper trades.
     const { count: paperTradeCount } = await this.supabase
       .from('trading_positions')
       .select('id', { count: 'exact', head: true })
-      .eq('user_id', orderRequest.user_id);
+      .eq('user_id', orderRequest.user_id)
+      .neq('strategy_used', 'autonomous_agent');
 
     const { count: failedReconciliations, error: reconError } = await this.supabase
       .from('reconciliation_log')
@@ -248,13 +250,15 @@ class LiveTradingEngine {
             return { success: true, idempotent: true, order_id: existingOrder.kraken_order_id, order_data: existingOrder };
           }
           if (rs === 'failed') {
-            // Pre-exchange failure — safe to retry with a fresh INSERT.
-            // Delete the stale row first so the caller can resubmit.
-            await this.supabase
+            // Pre-exchange failure — safe to retry only if stale row cleanup succeeds.
+            const { error: deleteError } = await this.supabase
               .from('executed_trades')
               .delete()
               .eq('client_order_id', clientOrderId)
               .eq('user_id', orderRequest.user_id);
+            if (deleteError) {
+              throw new Error(`Order ${clientOrderId} previously failed but stale reservation cleanup failed — cannot confirm retry safety. Contact support.`);
+            }
             throw new Error(`Order ${clientOrderId} previously failed before exchange submission. Retry is safe — resubmit the request.`);
           }
           if (rs === 'unconfirmed') {
@@ -325,9 +329,24 @@ class LiveTradingEngine {
       const result = await this.krakenRequest('AddOrder', krakenParams, credentials);
 
       if (result.error && result.error.length > 0) {
-        // Explicit Kraken rejection — mark failed
-        await markReservationFailed(`kraken_error: ${result.error.join(', ')}`);
-        throw new Error(`Order placement failed: ${result.error.join(', ')}`);
+        const errStr = result.error.join(', ');
+        // EService:* and EGeneral:Internal error are ambiguous — Kraken may have accepted the order
+        // before the failure. Treat them as unconfirmed and require reconciliation.
+        // All other error codes (EOrder:*, EGeneral:Invalid arguments, EAPI:*) guarantee rejection.
+        const isAmbiguous = result.error.some((e: string) =>
+          e.startsWith('EService:') || e.startsWith('EGeneral:Internal')
+        );
+        if (isAmbiguous) {
+          const { error: unconfirmedErr } = await this.supabase
+            .from('executed_trades')
+            .update({ reservation_status: 'unconfirmed' })
+            .eq('client_order_id', clientOrderId)
+            .eq('user_id', orderRequest.user_id);
+          if (unconfirmedErr) console.error('Failed to mark reservation unconfirmed after service error:', unconfirmedErr);
+          throw new Error(`Order placement failed with ambiguous service error — reconciliation required before retrying: ${errStr}`);
+        }
+        await markReservationFailed(`kraken_error: ${errStr}`);
+        throw new Error(`Order placement failed: ${errStr}`);
       }
 
       // SECURITY FIX (Finding 5): Update the pre-inserted reservation with the real Kraken order ID
@@ -356,9 +375,8 @@ class LiveTradingEngine {
       console.error('Order placement error:', error);
 
       // Network/timeout errors (not explicit Kraken rejections) → mark 'unconfirmed'.
-      // The order may have reached the exchange; reconciliation must resolve it.
-      // The caller must NOT retry with this client_order_id without verifying first.
-      if (!(error.message?.startsWith('Order placement failed:'))) {
+      // Skip if reservation was already handled above (explicit rejection or ambiguous service error).
+      if (!(error.message?.startsWith('Order placement failed'))) {
         const { error: unconfirmedError } = await this.supabase
           .from('executed_trades')
           .update({ reservation_status: 'unconfirmed' })
