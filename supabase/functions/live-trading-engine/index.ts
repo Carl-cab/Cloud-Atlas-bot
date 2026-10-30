@@ -595,8 +595,15 @@ class LiveTradingEngine {
       .eq('client_order_id', clientOrderId)
       .eq('user_id', userId);
     if (error) {
-      // Log but do not throw — the order exists on the exchange; reconciliation will catch DB mismatches.
-      console.error('WARN: Failed to update reservation with Kraken order ID. Order is live on exchange but DB row is stale — reconciliation required.', error);
+      // Order is live on exchange but DB update failed. Mark unconfirmed — the same
+      // treatment as a timeout — so retries get a clear "do not retry" signal and
+      // reconciliation can resolve the discrepancy.
+      await this.supabase
+        .from('executed_trades')
+        .update({ reservation_status: 'unconfirmed' })
+        .eq('client_order_id', clientOrderId)
+        .eq('user_id', userId);
+      console.error('WARN: Failed to confirm reservation with Kraken order ID. Marked unconfirmed — reconciliation required.', error);
     }
   }
 
