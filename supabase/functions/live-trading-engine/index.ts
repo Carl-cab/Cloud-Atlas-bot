@@ -250,12 +250,15 @@ class LiveTradingEngine {
             return { success: true, idempotent: true, order_id: existingOrder.kraken_order_id, order_data: existingOrder };
           }
           if (rs === 'failed') {
-            // Pre-exchange failure — safe to retry only if stale row cleanup succeeds.
+            // Scope delete to reservation_status='failed' to avoid a delayed concurrent
+            // request accidentally removing a newer 'pending' reservation for the same
+            // client_order_id after a successful retry has already resubmitted.
             const { error: deleteError } = await this.supabase
               .from('executed_trades')
               .delete()
               .eq('client_order_id', clientOrderId)
-              .eq('user_id', orderRequest.user_id);
+              .eq('user_id', orderRequest.user_id)
+              .eq('reservation_status', 'failed');
             if (deleteError) {
               throw new Error(`Order ${clientOrderId} previously failed but stale reservation cleanup failed — cannot confirm retry safety. Contact support.`);
             }
