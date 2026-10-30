@@ -81,7 +81,7 @@ export class RateLimiter {
       // Previously the rate limiter allowed all traffic when the DB was unreachable,
       // which let an attacker bypass limits by triggering DB errors.
       // Returning allowed=false is the safe default; legitimate traffic will retry.
-      return { allowed: false, remaining: 0, resetTime: now + config.windowMs, message: 'Rate limit service unavailable — please retry' };
+      return { allowed: false, remaining: 0, resetTime: now + 5_000, message: 'Rate limit service unavailable — please retry' };
     }
 
     const currentCount = entries?.length || 0;
@@ -96,7 +96,7 @@ export class RateLimiter {
     }
 
     // Record this request — store the resolved key and validated IP separately
-    await this.supabase
+    const { error: insertError } = await this.supabase
       .from('rate_limit_entries')
       .insert({
         key,
@@ -104,6 +104,11 @@ export class RateLimiter {
         ip_address: this.getClientIP(request),
         user_agent: request.headers.get('user-agent') || ''
       });
+
+    if (insertError) {
+      console.error('Rate limit record error:', insertError);
+      return { allowed: false, remaining: 0, resetTime: now + 5_000, message: 'Rate limit service unavailable — please retry' };
+    }
 
     return {
       allowed: true,

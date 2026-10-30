@@ -178,9 +178,10 @@ class LiveTradingEngine {
     const { count: paperTradeCount } = await this.supabase
       .from('executed_trades')
       .select('id', { count: 'exact', head: true })
-      .eq('user_id', orderRequest.user_id);
+      .eq('user_id', orderRequest.user_id)
+      .not('kraken_order_id', 'is', null);
 
-    const { count: failedReconciliations } = await this.supabase
+    const { count: failedReconciliations, error: reconError } = await this.supabase
       .from('reconciliation_log')
       .select('id', { count: 'exact', head: true })
       .eq('user_id', orderRequest.user_id)
@@ -190,7 +191,11 @@ class LiveTradingEngine {
     const gateFailures: string[] = [];
     if (hasFailedChecks) gateFailures.push('health-check has failed checks');
     if ((paperTradeCount ?? 0) < 50) gateFailures.push(`need 50+ paper trades (have ${paperTradeCount ?? 0})`);
-    if ((failedReconciliations ?? 0) > 0) gateFailures.push('unresolved reconciliation discrepancies exist');
+    if (reconError || failedReconciliations === null) {
+      gateFailures.push('unable to verify reconciliation status');
+    } else if (failedReconciliations > 0) {
+      gateFailures.push('unresolved reconciliation discrepancies exist');
+    }
 
     if (gateFailures.length > 0) {
       throw new Error(`Live trading readiness gate FAILED: ${gateFailures.join('; ')}`);
@@ -233,17 +238,42 @@ class LiveTradingEngine {
           .eq('client_order_id', clientOrderId)
           .maybeSingle();
         if (existingOrder) {
-          console.log(`Idempotency hit: order ${clientOrderId} already reserved`);
+          if (existingOrder.kraken_order_id === null) {
+            // Reservation exists but exchange has not confirmed yet (in-flight or failed pre-exchange).
+            // Return a distinct error so callers do not treat this as a filled order.
+            throw new Error(`Order ${clientOrderId} is already in progress or failed before exchange submission. Check order status before retrying.`);
+          }
+          console.log(`Idempotency hit: order ${clientOrderId} already confirmed`);
           return { success: true, idempotent: true, order_id: existingOrder.kraken_order_id, order_data: existingOrder };
         }
       }
       throw new Error(`Failed to reserve order slot: ${reservationError.message}`);
     }
 
-    const credentials = await this.getKrakenCredentials(orderRequest.user_id, userToken);
+    // Helper to mark the reservation as failed (called if we cannot reach exchange)
+    const markReservationFailed = async (reason: string) => {
+      await this.supabase
+        .from('executed_trades')
+        .update({ status: 'failed', paused_reason: reason })
+        .eq('client_order_id', clientOrderId)
+        .eq('user_id', orderRequest.user_id);
+    };
+
+    let credentials: KrakenCredentials;
+    try {
+      credentials = await this.getKrakenCredentials(orderRequest.user_id, userToken);
+    } catch (error) {
+      await markReservationFailed(`credential_error: ${error.message}`);
+      throw error;
+    }
 
     // Validate order before placement
-    await this.validateOrder(orderRequest, userToken);
+    try {
+      await this.validateOrder(orderRequest, userToken);
+    } catch (error) {
+      await markReservationFailed(`validation_error: ${error.message}`);
+      throw error;
+    }
 
     const krakenParams: Record<string, any> = {
       pair: this.mapSymbolToKraken(orderRequest.symbol),
@@ -272,8 +302,10 @@ class LiveTradingEngine {
 
     try {
       const result = await this.krakenRequest('AddOrder', krakenParams, credentials);
-      
+
       if (result.error && result.error.length > 0) {
+        // Explicit Kraken rejection — mark failed
+        await markReservationFailed(`kraken_error: ${result.error.join(', ')}`);
         throw new Error(`Order placement failed: ${result.error.join(', ')}`);
       }
 
@@ -301,13 +333,23 @@ class LiveTradingEngine {
       };
     } catch (error) {
       console.error('Order placement error:', error);
-      
+
+      // If the error is a network/timeout (not a Kraken rejection), mark unconfirmed —
+      // the order may have reached the exchange; reconciliation must resolve it.
+      if (!(error.message?.startsWith('Order placement failed:'))) {
+        await this.supabase
+          .from('executed_trades')
+          .update({ status: 'unconfirmed' })
+          .eq('client_order_id', clientOrderId)
+          .eq('user_id', orderRequest.user_id);
+      }
+
       // Log failed order attempt
       await this.logOrderEvent(orderRequest.user_id, 'order_failed', {
         error: error.message,
         order_request: orderRequest
       });
-      
+
       throw error;
     }
   }
@@ -527,7 +569,8 @@ class LiveTradingEngine {
       .eq('client_order_id', clientOrderId)
       .eq('user_id', userId);
     if (error) {
-      console.error('Error updating reservation with Kraken order ID:', error);
+      // Log but do not throw — the order exists on the exchange; reconciliation will catch DB mismatches.
+      console.error('WARN: Failed to update reservation with Kraken order ID. Order is live on exchange but DB row is stale — reconciliation required.', error);
     }
   }
 

@@ -400,15 +400,16 @@ class RiskManagementEngine {
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
-    const { error: haltError } = await supabaseService
+    const { data: pausedRows, error: haltError } = await supabaseService
       .from('bot_config')
       .update({ is_paused: true, paused_reason: `Circuit breaker: ${reason}` })
-      .eq('user_id', user_id);
+      .eq('user_id', user_id)
+      .select('user_id');
 
-    if (haltError) {
+    if (haltError || !pausedRows || pausedRows.length === 0) {
       // If we cannot persist the halt, surface the error rather than falsely claiming success.
       console.error('CRITICAL: Failed to persist circuit-breaker halt to bot_config:', haltError);
-      throw new Error(`Circuit breaker halt failed to persist: ${haltError.message}. Trading may still be active.`);
+      throw new Error(`Circuit breaker halt failed to persist: ${haltError?.message ?? 'no bot_config row updated'}. Trading may still be active.`);
     }
     actions_taken.push('halt_trading');
 
@@ -419,7 +420,7 @@ class RiskManagementEngine {
       .from('risk_cooldowns')
       .upsert({
         user_id,
-        reason: `CIRCUIT_BREAKER: ${reason}`,
+        reason: 'CIRCUIT_BREAKER',
         engaged_at: new Date().toISOString(),
         resume_at: resumeAt,
         details: { triggered_by: 'risk-management-engine', reason },
