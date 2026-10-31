@@ -112,17 +112,40 @@ async function krakenPrivateRequest(
   return await response.json();
 }
 
+// WP-3F: Fetch the current CADUSD rate from the Frankfurter API (ECB data, no API key required).
+// Falls back to a conservative constant (0.70) if the fetch fails, so reconciliation still runs.
+// The fallback is conservative — it understates CAD balances, which biases toward false-positive
+// discrepancy alerts rather than false-negative ones.
+const CADUSD_FALLBACK = 0.70;
+
+async function fetchCadUsdRate(): Promise<number> {
+  try {
+    const resp = await fetch('https://api.frankfurter.app/latest?from=CAD&to=USD', {
+      signal: AbortSignal.timeout(4000),
+    });
+    if (!resp.ok) throw new Error(`FX API HTTP ${resp.status}`);
+    const json = await resp.json();
+    const rate = json?.rates?.USD;
+    if (typeof rate !== 'number' || rate <= 0) throw new Error('Unexpected FX API response shape');
+    return rate;
+  } catch (err) {
+    console.warn(`fetchCadUsdRate failed (${err.message}), using fallback ${CADUSD_FALLBACK}`);
+    return CADUSD_FALLBACK;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Helper: extract USD-equivalent balance from Kraken Balance response
 // Kraken reports balances per asset (ZUSD, XXBT, etc.)
 // ---------------------------------------------------------------------------
-function extractKrakenUsdBalance(balances: Record<string, string>): number {
+async function extractKrakenUsdBalance(balances: Record<string, string>): Promise<number> {
   // ZUSD is Kraken's USD balance
   const usd = parseFloat(balances['ZUSD'] ?? '0');
-  // ZCAD is Canadian Dollar — convert at a conservative 1 CAD = 0.73 USD
-  // In production this should use a live FX rate
-  const cad = parseFloat(balances['ZCAD'] ?? '0') * 0.73;
-  return usd + cad;
+  const cadAmount = parseFloat(balances['ZCAD'] ?? '0');
+  if (cadAmount === 0) return usd;
+  // WP-3F: fetch live rate; fall back to conservative constant on error
+  const cadUsdRate = await fetchCadUsdRate();
+  return usd + cadAmount * cadUsdRate;
 }
 
 // ---------------------------------------------------------------------------
@@ -185,7 +208,7 @@ async function handleAction(
           throw new Error(`Kraken API error: ${krakenResp.error.join(', ')}`);
         }
 
-        krakenBalanceUsd = extractKrakenUsdBalance(
+        krakenBalanceUsd = await extractKrakenUsdBalance(
           krakenResp.result as Record<string, string> ?? {}
         );
       } catch (krakenError) {

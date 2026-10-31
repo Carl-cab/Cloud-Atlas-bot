@@ -66,28 +66,29 @@ export class RateLimiter {
     const now = Date.now();
     const windowStart = now - config.windowMs;
 
-    // Clean up old entries
-    await this.cleanupOldEntries(key, windowStart);
-
-    // Get current count
-    const { data: entries, error } = await this.supabase
-      .from('rate_limit_entries')
-      .select('*')
-      .eq('key', key)
-      .gte('timestamp', windowStart);
+    // WP-4A: Single atomic RPC replaces non-atomic SELECT→INSERT.
+    // The PG function acquires an advisory lock per key, so concurrent requests
+    // for the same user cannot both pass the limit boundary (TOCTOU fix).
+    const { data, error } = await this.supabase.rpc('check_and_record_rate_limit', {
+      p_key:          key,
+      p_window_start: windowStart,
+      p_now:          now,
+      p_max:          config.max,
+      p_ip_address:   this.getClientIP(request),
+      p_user_agent:   request.headers.get('user-agent') || '',
+    });
 
     if (error) {
       console.error('Rate limit check error:', error);
-      // SECURITY FIX (Finding 6): Fail CLOSED on DB errors.
-      // Previously the rate limiter allowed all traffic when the DB was unreachable,
-      // which let an attacker bypass limits by triggering DB errors.
-      // Returning allowed=false is the safe default; legitimate traffic will retry.
+      // Fail CLOSED on DB errors — never allow on uncertainty.
       return { allowed: false, remaining: 0, resetTime: now + 5_000, message: 'Rate limit service unavailable — please retry' };
     }
 
-    const currentCount = entries?.length || 0;
+    const row = Array.isArray(data) ? data[0] : data;
+    const isAllowed: boolean = row?.allowed ?? false;
+    const currentCount: number = row?.current_count ?? config.max;
 
-    if (currentCount >= config.max) {
+    if (!isAllowed) {
       return {
         allowed: false,
         remaining: 0,
@@ -96,34 +97,11 @@ export class RateLimiter {
       };
     }
 
-    // Record this request — store the resolved key and validated IP separately
-    const { error: insertError } = await this.supabase
-      .from('rate_limit_entries')
-      .insert({
-        key,
-        timestamp: now,
-        ip_address: this.getClientIP(request),
-        user_agent: request.headers.get('user-agent') || ''
-      });
-
-    if (insertError) {
-      console.error('Rate limit record error:', insertError);
-      return { allowed: false, remaining: 0, resetTime: now + 5_000, message: 'Rate limit service unavailable — please retry' };
-    }
-
     return {
       allowed: true,
       remaining: config.max - currentCount - 1,
       resetTime: now + config.windowMs
     };
-  }
-
-  private async cleanupOldEntries(key: string, windowStart: number): Promise<void> {
-    await this.supabase
-      .from('rate_limit_entries')
-      .delete()
-      .eq('key', key)
-      .lt('timestamp', windowStart);
   }
 
   // PHASE 1 FIX: Extract the LAST IP in x-forwarded-for, not the first.

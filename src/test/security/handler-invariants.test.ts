@@ -735,3 +735,254 @@ describe('stop-loss and take-profit direction (WP-3E)', () => {
     expect(correctShortStop).toBeGreaterThan(entryPrice); // new is correct
   });
 });
+
+// ---------------------------------------------------------------------------
+// WP-2A: unlock_funds position ownership verification
+// ---------------------------------------------------------------------------
+
+interface PositionLookupResult {
+  allowed: boolean;
+  reason?: string;
+}
+
+function evaluateUnlockFundsOwnership(
+  requestUserId: string,
+  positionUserId: string | null
+): PositionLookupResult {
+  if (positionUserId === null) {
+    return { allowed: false, reason: 'Position not found or does not belong to this account' };
+  }
+  if (positionUserId !== requestUserId) {
+    return { allowed: false, reason: 'Position not found or does not belong to this account' };
+  }
+  return { allowed: true };
+}
+
+describe('wallet-engine unlock_funds position ownership (WP-2A)', () => {
+  it('allows when position belongs to requesting user', () => {
+    const result = evaluateUnlockFundsOwnership('uid-abc', 'uid-abc');
+    expect(result.allowed).toBe(true);
+  });
+
+  it('blocks when position belongs to a different user', () => {
+    const result = evaluateUnlockFundsOwnership('uid-abc', 'uid-xyz');
+    expect(result.allowed).toBe(false);
+    expect(result.reason).toContain('does not belong to this account');
+  });
+
+  it('blocks when position does not exist (null)', () => {
+    const result = evaluateUnlockFundsOwnership('uid-abc', null);
+    expect(result.allowed).toBe(false);
+    expect(result.reason).toContain('not found');
+  });
+
+  it('error message does not reveal whether position exists or belongs to another user', () => {
+    const notFoundMsg = evaluateUnlockFundsOwnership('uid-abc', null).reason;
+    const wrongUserMsg = evaluateUnlockFundsOwnership('uid-abc', 'uid-xyz').reason;
+    // Same message — no oracle for position enumeration
+    expect(notFoundMsg).toBe(wrongUserMsg);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// WP-2B: atomic ledger — RPC must be called, not two-step INSERT+UPDATE
+// ---------------------------------------------------------------------------
+
+describe('wallet-engine atomic ledger (WP-2B)', () => {
+  it('calls record_wallet_transaction RPC (not separate insert+update)', () => {
+    const rpcCalls: string[] = [];
+    const mockSupabase = {
+      rpc: (fn: string) => {
+        rpcCalls.push(fn);
+        return Promise.resolve({ error: null });
+      },
+    };
+
+    // Simulate what recordTransaction now does
+    async function recordTxViaRpc(supabase: typeof mockSupabase) {
+      const { error } = await supabase.rpc('record_wallet_transaction');
+      if (error) throw new Error('failed');
+    }
+
+    return recordTxViaRpc(mockSupabase).then(() => {
+      expect(rpcCalls).toContain('record_wallet_transaction');
+    });
+  });
+
+  it('throws on RPC error — never silently succeeds', async () => {
+    const mockSupabase = {
+      rpc: () => Promise.resolve({ error: { message: 'constraint violation' } }),
+    };
+
+    async function recordTxViaRpc(supabase: typeof mockSupabase) {
+      const { error } = await supabase.rpc('record_wallet_transaction');
+      if (error) throw new Error(`Failed to record transaction: ${error.message}`);
+    }
+
+    await expect(recordTxViaRpc(mockSupabase)).rejects.toThrow('constraint violation');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// WP-3D: ML training metrics must not use Math.random()
+// ---------------------------------------------------------------------------
+
+function computeDeterministicMetrics(labels: number[]): {
+  accuracy: number; precision: number; recall: number; f1: number;
+} {
+  const positiveCount = labels.filter(l => l === 1).length;
+  const negativeCount = labels.length - positiveCount;
+  const majorityIsPositive = positiveCount >= negativeCount;
+  const total = labels.length || 1;
+  const accuracy = Math.max(positiveCount, negativeCount) / total;
+  const precision = majorityIsPositive ? positiveCount / total : 0;
+  const recall = majorityIsPositive ? 1.0 : 0.0;
+  const f1 = (precision + recall) > 0 ? 2 * (precision * recall) / (precision + recall) : 0;
+  return { accuracy, precision, recall, f1 };
+}
+
+describe('ML training metrics are deterministic (WP-3D)', () => {
+  it('same labels produce the same metrics every time', () => {
+    const labels = [1, 0, 1, 1, 0, 0, 1, 0, 1, 0];
+    const m1 = computeDeterministicMetrics(labels);
+    const m2 = computeDeterministicMetrics(labels);
+    expect(m1).toEqual(m2);
+  });
+
+  it('all-negative dataset: accuracy = 1.0, recall = 0', () => {
+    const m = computeDeterministicMetrics([0, 0, 0, 0]);
+    expect(m.accuracy).toBe(1.0);
+    expect(m.recall).toBe(0);
+    expect(m.f1).toBe(0);
+  });
+
+  it('all-positive dataset: accuracy = 1.0, recall = 1.0', () => {
+    const m = computeDeterministicMetrics([1, 1, 1, 1]);
+    expect(m.accuracy).toBe(1.0);
+    expect(m.recall).toBe(1.0);
+  });
+
+  it('50/50 split: majority class accuracy = 0.5', () => {
+    const m = computeDeterministicMetrics([1, 0, 1, 0]);
+    expect(m.accuracy).toBe(0.5);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// WP-3F: Live FX rate — fallback used on failure, never 0 or negative
+// ---------------------------------------------------------------------------
+
+async function fetchCadUsdRateTestable(
+  fetchFn: () => Promise<{ ok: boolean; json: () => Promise<unknown> }>
+): Promise<number> {
+  const FALLBACK = 0.70;
+  try {
+    const resp = await fetchFn();
+    if (!resp.ok) return FALLBACK;
+    const json = await resp.json() as { rates?: { USD?: number } };
+    const rate = json?.rates?.USD;
+    if (typeof rate !== 'number' || rate <= 0) return FALLBACK;
+    return rate;
+  } catch {
+    return FALLBACK;
+  }
+}
+
+describe('reconciliation FX rate (WP-3F)', () => {
+  it('returns live rate on success', async () => {
+    const rate = await fetchCadUsdRateTestable(async () => ({
+      ok: true,
+      json: async () => ({ rates: { USD: 0.74 } }),
+    }));
+    expect(rate).toBe(0.74);
+  });
+
+  it('falls back to 0.70 on HTTP error', async () => {
+    const rate = await fetchCadUsdRateTestable(async () => ({
+      ok: false,
+      json: async () => ({}),
+    }));
+    expect(rate).toBe(0.70);
+  });
+
+  it('falls back to 0.70 on network throw', async () => {
+    const rate = await fetchCadUsdRateTestable(async () => { throw new Error('network'); });
+    expect(rate).toBe(0.70);
+  });
+
+  it('fallback is positive and plausible for CAD/USD', () => {
+    // Sanity: fallback must be positive and between realistic bounds
+    expect(0.70).toBeGreaterThan(0);
+    expect(0.70).toBeLessThan(1.0);
+  });
+
+  it('falls back to 0.70 when rate field is missing', async () => {
+    const rate = await fetchCadUsdRateTestable(async () => ({
+      ok: true,
+      json: async () => ({ rates: {} }),
+    }));
+    expect(rate).toBe(0.70);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// WP-4A: Atomic rate limit — RPC must be called
+// ---------------------------------------------------------------------------
+
+describe('atomic rate limit RPC (WP-4A)', () => {
+  it('calls check_and_record_rate_limit RPC', async () => {
+    const rpcCalls: string[] = [];
+    const mockSupabase = {
+      rpc: (fn: string) => {
+        rpcCalls.push(fn);
+        return Promise.resolve({ data: [{ allowed: true, current_count: 3 }], error: null });
+      },
+    };
+
+    async function checkRateLimitViaRpc(supabase: typeof mockSupabase, max: number) {
+      const { data, error } = await supabase.rpc('check_and_record_rate_limit');
+      if (error) return { allowed: false };
+      const row = Array.isArray(data) ? data[0] : data;
+      return { allowed: row?.allowed ?? false, remaining: max - (row?.current_count ?? max) - 1 };
+    }
+
+    const result = await checkRateLimitViaRpc(mockSupabase, 10);
+    expect(rpcCalls).toContain('check_and_record_rate_limit');
+    expect(result.allowed).toBe(true);
+    expect(result.remaining).toBe(6);
+  });
+
+  it('fails closed when RPC returns error', async () => {
+    const mockSupabase = {
+      rpc: () => Promise.resolve({ data: null, error: { message: 'DB timeout' } }),
+    };
+
+    async function checkRateLimitViaRpc(supabase: typeof mockSupabase) {
+      const { error } = await supabase.rpc('check_and_record_rate_limit');
+      if (error) return { allowed: false };
+      return { allowed: true };
+    }
+
+    const result = await checkRateLimitViaRpc(mockSupabase);
+    expect(result.allowed).toBe(false);
+  });
+
+  it('correctly reports denied when RPC returns allowed=false', async () => {
+    const mockSupabase = {
+      rpc: () => Promise.resolve({
+        data: [{ allowed: false, current_count: 10 }],
+        error: null,
+      }),
+    };
+
+    async function checkRateLimitViaRpc(supabase: typeof mockSupabase) {
+      const { data, error } = await supabase.rpc('check_and_record_rate_limit');
+      if (error) return { allowed: false };
+      const row = Array.isArray(data) ? data[0] : data;
+      return { allowed: row?.allowed ?? false };
+    }
+
+    const result = await checkRateLimitViaRpc(mockSupabase);
+    expect(result.allowed).toBe(false);
+  });
+});

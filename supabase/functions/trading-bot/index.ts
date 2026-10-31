@@ -122,16 +122,25 @@ class KrakenAPI {
 class MLEngine {
   async trainModel(symbol: string, marketData: any[]): Promise<any> {
     console.log(`Training ML model for ${symbol} with ${marketData.length} data points`);
-    
-    // Simplified ML training simulation
+
     const features = this.extractFeatures(marketData);
     const labels = this.generateLabels(marketData);
-    
-    // Simulate model training
-    const accuracy = 0.65 + Math.random() * 0.2; // 65-85% accuracy
-    const precision = 0.6 + Math.random() * 0.25;
-    const recall = 0.55 + Math.random() * 0.3;
-    const f1Score = 2 * (precision * recall) / (precision + recall);
+
+    // WP-3D: Replace Math.random() metrics with deterministic values computed from
+    // the actual label distribution. We report naive majority-class baseline metrics
+    // so the stored numbers reflect real data properties, not fabricated accuracy.
+    const positiveCount = labels.filter(l => l === 1).length;
+    const negativeCount = labels.length - positiveCount;
+    const majorityIsPositive = positiveCount >= negativeCount;
+    const total = labels.length || 1;
+    const accuracy = Math.max(positiveCount, negativeCount) / total;
+    // Majority-class classifier: precision = fraction of positives when predicting all positive,
+    // or 0 when predicting all negative. Recall mirrors this.
+    const precision = majorityIsPositive ? positiveCount / total : 0;
+    const recall = majorityIsPositive ? 1.0 : 0.0;
+    const f1Score = (precision + recall) > 0
+      ? 2 * (precision * recall) / (precision + recall)
+      : 0;
     
     const modelMetrics = {
       symbol,
