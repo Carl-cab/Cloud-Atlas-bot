@@ -147,34 +147,161 @@ class LiveTradingEngine {
 
   // Place a live order
   async placeOrder(orderRequest: OrderRequest, userToken: string): Promise<any> {
-    // PHASE 2 FIX: Check kill switch FIRST — before credentials or validation
+    // SECURITY FIX (Finding 1): Check kill switch FIRST — before credentials or validation
     await this.checkKillSwitch(orderRequest.user_id);
 
-    // PHASE 2 FIX: Idempotency check — if client_order_id already exists, return existing order
-    const clientOrderId = orderRequest.client_order_id || crypto.randomUUID();
-    if (orderRequest.client_order_id) {
-      const { data: existingOrder } = await this.supabase
-        .from('executed_trades')
-        .select('*')
-        .eq('user_id', orderRequest.user_id)
-        .eq('client_order_id', clientOrderId)
-        .maybeSingle();
+    // SECURITY FIX (Finding 1): Mode gate — only 'live' mode may submit real orders
+    const { data: botConfig, error: configError } = await this.supabase
+      .from('bot_config')
+      .select('mode, is_active')
+      .eq('user_id', orderRequest.user_id)
+      .single();
 
-      if (existingOrder) {
-        console.log(`Idempotency hit: order ${clientOrderId} already exists`);
-        return {
-          success: true,
-          idempotent: true,
-          order_id: existingOrder.kraken_order_id,
-          order_data: existingOrder
-        };
-      }
+    if (configError || !botConfig) {
+      throw new Error('Unable to verify bot configuration — order blocked for safety');
+    }
+    if (botConfig.mode !== 'live') {
+      throw new Error(`Live order placement rejected: bot is in '${botConfig.mode}' mode. Switch to live mode first.`);
+    }
+    if (!botConfig.is_active) {
+      throw new Error('Live order placement rejected: bot is not active');
     }
 
-    const credentials = await this.getKrakenCredentials(orderRequest.user_id, userToken);
+    // SECURITY FIX (Finding 1): Readiness gate — same criteria as trading-bot/index.ts
+    const { data: readinessChecks } = await this.supabase
+      .from('deployment_checks')
+      .select('status')
+      .eq('check_category', 'trading')
+      .order('checked_at', { ascending: false })
+      .limit(20);
+
+    // Paper trades are recorded in trading_positions by trading-bot, not in executed_trades.
+    // Exclude autonomous-agent positions (strategy_used='autonomous_agent') so a user cannot
+    // satisfy the 50-trade gate by submitting autonomous-agent requests instead of real paper trades.
+    const { count: paperTradeCount } = await this.supabase
+      .from('trading_positions')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', orderRequest.user_id)
+      .neq('strategy_used', 'autonomous_agent');
+
+    const { count: failedReconciliations, error: reconError } = await this.supabase
+      .from('reconciliation_log')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', orderRequest.user_id)
+      .eq('status', 'discrepancy');
+
+    const hasFailedChecks = !readinessChecks || readinessChecks.some((c: { status: string }) => c.status === 'fail');
+    const gateFailures: string[] = [];
+    if (hasFailedChecks) gateFailures.push('health-check has failed checks');
+    if ((paperTradeCount ?? 0) < 50) gateFailures.push(`need 50+ paper trades (have ${paperTradeCount ?? 0})`);
+    if (reconError || failedReconciliations === null) {
+      gateFailures.push('unable to verify reconciliation status');
+    } else if (failedReconciliations > 0) {
+      gateFailures.push('unresolved reconciliation discrepancies exist');
+    }
+
+    if (gateFailures.length > 0) {
+      throw new Error(`Live trading readiness gate FAILED: ${gateFailures.join('; ')}`);
+    }
+
+    // Belt-and-suspenders env var guard (does not require a deploy to enable/disable)
+    if (Deno.env.get('LIVE_TRADING_ENABLED') !== 'true') {
+      throw new Error('Live trading is disabled: LIVE_TRADING_ENABLED env var is not set to "true"');
+    }
+
+    // SECURITY FIX (Finding 5): Atomic idempotency reservation.
+    // INSERT a placeholder row before calling the exchange. The unique constraint
+    // on client_order_id ensures only one concurrent request can proceed.
+    // If INSERT fails with code 23505 (unique violation), another request owns
+    // this client_order_id and we return the existing record idempotently.
+    const clientOrderId = orderRequest.client_order_id || crypto.randomUUID();
+    const { error: reservationError } = await this.supabase
+      .from('executed_trades')
+      .insert({
+        user_id: orderRequest.user_id,
+        client_order_id: clientOrderId,
+        symbol: orderRequest.symbol,
+        side: orderRequest.side,
+        trade_type: orderRequest.type,
+        quantity: orderRequest.quantity,
+        price: orderRequest.price || 0,
+        kraken_order_id: null, // filled in after exchange confirms
+        reservation_status: 'pending', // lifecycle: pending → confirmed | failed | unconfirmed
+        timestamp: new Date().toISOString(),
+        fee: 0,
+        realized_pnl: null,
+      });
+
+    if (reservationError) {
+      if (reservationError.code === '23505') {
+        // Unique violation: another request already reserved this client_order_id.
+        // Use reservation_status to apply the right retry policy.
+        const { data: existingOrder } = await this.supabase
+          .from('executed_trades')
+          .select('*')
+          .eq('user_id', orderRequest.user_id)
+          .eq('client_order_id', clientOrderId)
+          .maybeSingle();
+        if (existingOrder) {
+          const rs = existingOrder.reservation_status;
+          if (existingOrder.kraken_order_id) {
+            // Confirmed: return idempotently
+            console.log(`Idempotency hit: order ${clientOrderId} already confirmed`);
+            return { success: true, idempotent: true, order_id: existingOrder.kraken_order_id, order_data: existingOrder };
+          }
+          if (rs === 'failed') {
+            // Scope delete to reservation_status='failed' to avoid a delayed concurrent
+            // request accidentally removing a newer 'pending' reservation for the same
+            // client_order_id after a successful retry has already resubmitted.
+            const { error: deleteError } = await this.supabase
+              .from('executed_trades')
+              .delete()
+              .eq('client_order_id', clientOrderId)
+              .eq('user_id', orderRequest.user_id)
+              .eq('reservation_status', 'failed');
+            if (deleteError) {
+              throw new Error(`Order ${clientOrderId} previously failed but stale reservation cleanup failed — cannot confirm retry safety. Contact support.`);
+            }
+            throw new Error(`Order ${clientOrderId} previously failed before exchange submission. Retry is safe — resubmit the request.`);
+          }
+          if (rs === 'unconfirmed') {
+            throw new Error(`Order ${clientOrderId} has an ambiguous outcome (possible network timeout). Do not retry until reconciliation confirms exchange state.`);
+          }
+          // rs === 'pending' (in-flight) or unknown
+          throw new Error(`Order ${clientOrderId} is already in progress. Wait for the current request to complete before retrying.`);
+        }
+      }
+      throw new Error(`Failed to reserve order slot: ${reservationError.message}`);
+    }
+
+    // Mark the reservation as 'failed' so the caller can distinguish it from an in-flight
+    // order and safely retry with the same client_order_id.
+    const markReservationFailed = async (reason: string) => {
+      const { error } = await this.supabase
+        .from('executed_trades')
+        .update({ reservation_status: 'failed' })
+        .eq('client_order_id', clientOrderId)
+        .eq('user_id', orderRequest.user_id);
+      if (error) {
+        console.error('Failed to mark reservation as failed:', error, 'reason:', reason);
+      }
+    };
+
+    let credentials: KrakenCredentials;
+    try {
+      credentials = await this.getKrakenCredentials(orderRequest.user_id, userToken);
+    } catch (error) {
+      await markReservationFailed(`credential_error: ${error.message}`);
+      throw error;
+    }
 
     // Validate order before placement
-    await this.validateOrder(orderRequest, userToken);
+    try {
+      await this.validateOrder(orderRequest, userToken);
+    } catch (error) {
+      await markReservationFailed(`validation_error: ${error.message}`);
+      throw error;
+    }
 
     const krakenParams: Record<string, any> = {
       pair: this.mapSymbolToKraken(orderRequest.symbol),
@@ -203,16 +330,33 @@ class LiveTradingEngine {
 
     try {
       const result = await this.krakenRequest('AddOrder', krakenParams, credentials);
-      
+
       if (result.error && result.error.length > 0) {
-        throw new Error(`Order placement failed: ${result.error.join(', ')}`);
+        const errStr = result.error.join(', ');
+        // EService:* and EGeneral:Internal error are ambiguous — Kraken may have accepted the order
+        // before the failure. Treat them as unconfirmed and require reconciliation.
+        // All other error codes (EOrder:*, EGeneral:Invalid arguments, EAPI:*) guarantee rejection.
+        const isAmbiguous = result.error.some((e: string) =>
+          e.startsWith('EService:') || e.startsWith('EGeneral:Internal')
+        );
+        if (isAmbiguous) {
+          const { error: unconfirmedErr } = await this.supabase
+            .from('executed_trades')
+            .update({ reservation_status: 'unconfirmed' })
+            .eq('client_order_id', clientOrderId)
+            .eq('user_id', orderRequest.user_id);
+          if (unconfirmedErr) console.error('Failed to mark reservation unconfirmed after service error:', unconfirmedErr);
+          throw new Error(`Order placement failed with ambiguous service error — reconciliation required before retrying: ${errStr}`);
+        }
+        await markReservationFailed(`kraken_error: ${errStr}`);
+        throw new Error(`Order placement failed: ${errStr}`);
       }
 
-      // Store order in database with client_order_id for idempotency
+      // SECURITY FIX (Finding 5): Update the pre-inserted reservation with the real Kraken order ID
       const orderData = {
         user_id: orderRequest.user_id,
         kraken_order_id: result.result.txid[0],
-        client_order_id: clientOrderId, // PHASE 2 FIX: persist for dedup
+        client_order_id: clientOrderId,
         symbol: orderRequest.symbol,
         side: orderRequest.side,
         type: orderRequest.type,
@@ -222,7 +366,7 @@ class LiveTradingEngine {
         created_at: new Date().toISOString(),
       };
 
-      await this.storeOrder(orderData);
+      await this.updateReservation(clientOrderId, result.result.txid[0], orderRequest.user_id);
 
       return {
         success: true,
@@ -232,13 +376,27 @@ class LiveTradingEngine {
       };
     } catch (error) {
       console.error('Order placement error:', error);
-      
+
+      // Network/timeout errors (not explicit Kraken rejections) → mark 'unconfirmed'.
+      // Skip if reservation was already handled above (explicit rejection or ambiguous service error).
+      if (!(error.message?.startsWith('Order placement failed'))) {
+        const { error: unconfirmedError } = await this.supabase
+          .from('executed_trades')
+          .update({ reservation_status: 'unconfirmed' })
+          .eq('client_order_id', clientOrderId)
+          .eq('user_id', orderRequest.user_id);
+        if (unconfirmedError) {
+          console.error('Failed to mark reservation as unconfirmed:', unconfirmedError);
+        }
+        console.error(`AMBIGUOUS OUTCOME for order ${clientOrderId}: possible network/timeout. Marked unconfirmed — reconciliation required before retrying.`);
+      }
+
       // Log failed order attempt
       await this.logOrderEvent(orderRequest.user_id, 'order_failed', {
         error: error.message,
         order_request: orderRequest
       });
-      
+
       throw error;
     }
   }
@@ -340,9 +498,9 @@ class LiveTradingEngine {
         }
       }
     } catch (error) {
-      console.log('Balance validation skipped:', error.message);
-      // Continue without balance validation if credentials are not available
-      // This allows demo/paper trading while live credentials are being set up
+      // SECURITY FIX (Finding 2): Re-throw — balance validation failures must halt order placement.
+      // live-trading-engine only handles real orders; there is no demo/paper path here.
+      throw new Error(`Balance validation failed: ${error.message}`);
     }
 
     // Check against risk limits
@@ -368,8 +526,8 @@ class LiveTradingEngine {
           throw new Error(`Order exceeds maximum position size limit of ${(riskSettings.max_position_size * 100).toFixed(1)}%`);
         }
       } catch (error) {
-        console.log('Risk limit validation skipped:', error.message);
-        // Continue without risk validation if portfolio value calculation fails
+        // SECURITY FIX (Finding 3): Re-throw — risk limit violations or portfolio errors must halt order placement.
+        throw new Error(`Risk limit validation failed: ${error.message}`);
       }
     }
   }
@@ -384,8 +542,8 @@ class LiveTradingEngine {
       return parseFloat(balance.ZUSD || '0') + parseFloat(balance.USD || '0') + 
              (parseFloat(balance.XXBT || '0') * await this.getMarketPrice('BTCUSD'));
     } catch (error) {
-      console.log('Portfolio value calculation failed:', error.message);
-      return 10000; // Default value for demo/paper trading
+      // SECURITY FIX (Finding 3): Never use a fabricated fallback for live trade sizing.
+      throw new Error(`Portfolio value calculation failed: ${error.message}`);
     }
   }
 
@@ -424,8 +582,6 @@ class LiveTradingEngine {
       }
     });
 
-    console.log('Secure credentials response:', { data, error });
-
     if (error) {
       console.error('Secure credentials function error:', error);
       throw new Error(`Failed to retrieve credentials: ${error.message || 'Unknown error'}`);
@@ -448,26 +604,26 @@ class LiveTradingEngine {
     };
   }
 
-  private async storeOrder(orderData: any): Promise<void> {
+  // SECURITY FIX (Finding 5): Update the pre-inserted reservation row with the real Kraken txid.
+  // Called after a successful AddOrder call. Errors are logged but not thrown —
+  // the order already exists on the exchange; reconciliation will catch DB mismatches.
+  private async updateReservation(clientOrderId: string, krakenOrderId: string, userId: string): Promise<void> {
     const { error } = await this.supabase
       .from('executed_trades')
-      .insert({
-        user_id: orderData.user_id,
-        kraken_order_id: orderData.kraken_order_id,
-        client_order_id: orderData.client_order_id || null, // PHASE 2 FIX
-        symbol: orderData.symbol,
-        side: orderData.side,
-        trade_type: orderData.type,
-        quantity: orderData.quantity,
-        price: orderData.price,
-        timestamp: orderData.created_at,
-        fee: 0, // Will be updated when trade executes
-        realized_pnl: null
-      });
+      .update({ kraken_order_id: krakenOrderId, reservation_status: 'confirmed' })
+      .eq('client_order_id', clientOrderId)
+      .eq('user_id', userId);
     if (error) {
-      console.error('Error storing order:', error);
+      // Order is live on exchange but DB update failed. Mark unconfirmed — the same
+      // treatment as a timeout — so retries get a clear "do not retry" signal and
+      // reconciliation can resolve the discrepancy.
+      await this.supabase
+        .from('executed_trades')
+        .update({ reservation_status: 'unconfirmed' })
+        .eq('client_order_id', clientOrderId)
+        .eq('user_id', userId);
+      console.error('WARN: Failed to confirm reservation with Kraken order ID. Marked unconfirmed — reconciliation required.', error);
     }
-  }
   }
 
   private async updateOrderStatus(order_id: string, status: string): Promise<void> {

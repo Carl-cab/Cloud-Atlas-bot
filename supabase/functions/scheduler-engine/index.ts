@@ -231,7 +231,7 @@ async function runDailyMaintenance(): Promise<Record<string, unknown>> {
   const reconResults = { success: 0, failed: 0, skipped: 0 };
   for (const userId of activeUsers) {
     const r = await invokeFunction('reconciliation-engine', {
-      action: 'reconcile',
+      action: 'run_reconciliation',
       user_id: userId,
       auto_adjust: false,
     });
@@ -328,16 +328,14 @@ serve(async (req) => {
 
     const token = authHeader.replace('Bearer ', '');
 
-    // Allow service-role key for cron invocations
+    // All scheduler actions are infrastructure-level maintenance tasks.
+    // Only the service-role key (used by cron/internal callers) is permitted.
+    // Regular user JWTs are rejected here — there is no user-facing trigger for these jobs.
     const isServiceRole = token === SERVICE_ROLE_KEY;
-
     if (!isServiceRole) {
-      const { data: { user }, error: authError } = await supabaseAuth.auth.getUser(token);
-      if (authError || !user) {
-        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-          status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
-      }
+      return new Response(JSON.stringify({ error: 'Forbidden' }), {
+        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
     }
 
     const body = await req.json().catch(() => ({}));
@@ -370,7 +368,7 @@ serve(async (req) => {
         const activeUsers = await getActiveUsers();
         const results = { success: 0, failed: 0, users: activeUsers.length };
         for (const userId of activeUsers) {
-          const r = await invokeFunction('reconciliation-engine', { action: 'reconcile', user_id: userId });
+          const r = await invokeFunction('reconciliation-engine', { action: 'run_reconciliation', user_id: userId });
           if (r.success) results.success++;
           else results.failed++;
         }

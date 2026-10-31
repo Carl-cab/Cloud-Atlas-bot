@@ -104,24 +104,43 @@ class KrakenAPI {
   }
 
   private async createSignature(endpoint: string, postData: string, nonce: number): Promise<string> {
-    // Simplified signature creation - implement proper HMAC-SHA512 in production
-    return btoa(`${nonce}${postData}${endpoint}`);
+    const encoder = new TextEncoder();
+    const messageHash = await crypto.subtle.digest('SHA-256', encoder.encode(nonce.toString() + postData));
+    const secretBytes = new Uint8Array(atob(this.privateKey).split('').map(c => c.charCodeAt(0)));
+    const key = await crypto.subtle.importKey(
+      'raw', secretBytes, { name: 'HMAC', hash: 'SHA-512' }, false, ['sign']
+    );
+    const pathBytes = encoder.encode(endpoint);
+    const combined = new Uint8Array(pathBytes.length + messageHash.byteLength);
+    combined.set(pathBytes);
+    combined.set(new Uint8Array(messageHash), pathBytes.length);
+    const sig = await crypto.subtle.sign('HMAC', key, combined);
+    return btoa(String.fromCharCode(...new Uint8Array(sig)));
   }
 }
 
 class MLEngine {
   async trainModel(symbol: string, marketData: any[]): Promise<any> {
     console.log(`Training ML model for ${symbol} with ${marketData.length} data points`);
-    
-    // Simplified ML training simulation
+
     const features = this.extractFeatures(marketData);
     const labels = this.generateLabels(marketData);
-    
-    // Simulate model training
-    const accuracy = 0.65 + Math.random() * 0.2; // 65-85% accuracy
-    const precision = 0.6 + Math.random() * 0.25;
-    const recall = 0.55 + Math.random() * 0.3;
-    const f1Score = 2 * (precision * recall) / (precision + recall);
+
+    // WP-3D: Replace Math.random() metrics with deterministic values computed from
+    // the actual label distribution. We report naive majority-class baseline metrics
+    // so the stored numbers reflect real data properties, not fabricated accuracy.
+    const positiveCount = labels.filter(l => l === 1).length;
+    const negativeCount = labels.length - positiveCount;
+    const majorityIsPositive = positiveCount >= negativeCount;
+    const total = labels.length || 1;
+    const accuracy = Math.max(positiveCount, negativeCount) / total;
+    // Majority-class classifier: precision = fraction of positives when predicting all positive,
+    // or 0 when predicting all negative. Recall mirrors this.
+    const precision = majorityIsPositive ? positiveCount / total : 0;
+    const recall = majorityIsPositive ? 1.0 : 0.0;
+    const f1Score = (precision + recall) > 0
+      ? 2 * (precision * recall) / (precision + recall)
+      : 0;
     
     const modelMetrics = {
       symbol,
@@ -1055,9 +1074,16 @@ serve(async (req) => {
 
         // Execute trade (paper trading mode)
         if (botConfig.mode === 'paper') {
-          // PHASE 2 FIX: Include stop_loss and take_profit prices in paper position
-          const stopLossPrice = latestSignal.price * (1 - riskEval.stopLossPct);
-          const takeProfitPrice = latestSignal.price * (1 + riskEval.takeProfitPct);
+          // Stop-loss and take-profit direction depends on side:
+          // For a long (buy): stop below entry, target above entry.
+          // For a short (sell): stop above entry, target below entry.
+          const isLong = latestSignal.signal_type === 'buy';
+          const stopLossPrice = isLong
+            ? latestSignal.price * (1 - riskEval.stopLossPct)
+            : latestSignal.price * (1 + riskEval.stopLossPct);
+          const takeProfitPrice = isLong
+            ? latestSignal.price * (1 + riskEval.takeProfitPct)
+            : latestSignal.price * (1 - riskEval.takeProfitPct);
 
           const position = {
             user_id: userId,
@@ -1095,10 +1121,14 @@ serve(async (req) => {
 
         const hasFailedChecks = !readinessChecks || readinessChecks.some(c => c.status === 'fail');
 
+        // Paper trades are recorded in trading_positions by the paper-trading path.
+        // executed_trades holds live orders only and must not be used for this gate.
+        // Exclude autonomous-agent positions to prevent gate bypass via agent requests.
         const { count: paperTradeCount } = await supabase
-          .from('executed_trades')
+          .from('trading_positions')
           .select('id', { count: 'exact', head: true })
-          .eq('user_id', userId);
+          .eq('user_id', userId)
+          .neq('strategy_used', 'autonomous_agent');
 
         const { count: failedReconciliations } = await supabase
           .from('reconciliation_log')

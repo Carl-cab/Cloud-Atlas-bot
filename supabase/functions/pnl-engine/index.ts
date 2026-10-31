@@ -119,21 +119,38 @@ serve(async (req) => {
     }
 
     const token = authHeader.replace('Bearer ', '');
-    const { data: { user }, error: authError } = await supabaseAuth.auth.getUser(token);
+    const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+    const isServiceRole = token === SERVICE_ROLE_KEY;
 
-    if (authError || !user) {
-      await audit.authFailure(supabaseAdmin, null, authError?.message ?? 'Invalid token');
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
+    let userId: string;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let body: Record<string, any>;
+
+    if (isServiceRole) {
+      // Service-role path (called by scheduler-engine): trust user_id from body.
+      body = await req.json();
+      const { user_id: bodyUserId } = body;
+      if (!bodyUserId) {
+        return new Response(JSON.stringify({ error: 'user_id required for service-role calls' }), {
+          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+      userId = bodyUserId;
+    } else {
+      const { data: { user }, error: authError } = await supabaseAuth.auth.getUser(token);
+      if (authError || !user) {
+        await audit.authFailure(supabaseAdmin, null, authError?.message ?? 'Invalid token');
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+          status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+      const rateLimitResponse = await applyRateLimit(req, rateLimitConfigs.api, user.id);
+      if (rateLimitResponse) return rateLimitResponse;
+      body = await req.json();
+      userId = user.id;
     }
 
-    const rateLimitResponse = await applyRateLimit(req, rateLimitConfigs.api, user.id);
-    if (rateLimitResponse) return rateLimitResponse;
-
-    const body = await req.json();
     const { action } = body;
-    const userId = user.id;
 
     switch (action) {
 

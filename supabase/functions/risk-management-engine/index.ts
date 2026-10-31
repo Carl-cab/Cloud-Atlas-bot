@@ -1,6 +1,7 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { applyRateLimit, rateLimitConfigs } from '../_shared/rateLimiter.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -252,6 +253,15 @@ class RiskManagementEngine {
       await this.logRiskEvent(user_id, alert);
     }
 
+    // SECURITY FIX (Finding 4): Persist circuit-breaker halt to bot_config if triggered.
+    // Previously this returned circuit_breaker_triggered=true without stopping trading.
+    if (circuit_breaker_triggered) {
+      await this.triggerCircuitBreaker(
+        user_id,
+        `Daily loss limit exceeded: ${(daily_loss_percentage * 100).toFixed(2)}%`
+      );
+    }
+
     // Update risk monitoring
     await this.updateRiskMonitoring(user_id, {
       daily_loss: daily_loss_percentage,
@@ -365,34 +375,73 @@ class RiskManagementEngine {
     }
   }
 
-  // Circuit breaker logic
+  // SECURITY FIX (Finding 4): Circuit breaker now durably persists a halt to bot_config.
+  // The previous implementation only logged an event and claimed success without
+  // actually pausing trading. This fix writes is_paused=true to bot_config so
+  // that subsequent order attempts are blocked at the kill-switch check.
   async triggerCircuitBreaker(user_id: string, reason: string) {
+    const actions_taken: string[] = [];
+
+    // 1. Log the circuit breaker event (best-effort, non-fatal)
     try {
-      // Log the circuit breaker event
       await this.logRiskEvent(user_id, {
         type: 'circuit_breaker',
         severity: 'critical',
         message: `Circuit breaker triggered: ${reason}`
       });
-
-      // Here you would implement the actual trading halt logic
-      // This could involve:
-      // 1. Stopping all automated trading
-      // 2. Closing open positions (if configured)
-      // 3. Sending notifications
-      // 4. Updating bot status
-
-      console.log(`Circuit breaker triggered for user ${user_id}: ${reason}`);
-      
-      return {
-        success: true,
-        message: 'Circuit breaker activated successfully',
-        actions_taken: ['halt_trading', 'notify_user', 'log_event']
-      };
-    } catch (error) {
-      console.error('Error triggering circuit breaker:', error);
-      throw error;
+      actions_taken.push('log_event');
+    } catch (logError) {
+      console.error('Failed to log circuit breaker event:', logError);
     }
+
+    // 2. DURABLE HALT: Write is_paused=true to bot_config — this is the real stop.
+    //    Use the service-role client so RLS does not block the update.
+    const supabaseService = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    );
+    const { data: pausedRows, error: haltError } = await supabaseService
+      .from('bot_config')
+      .update({ is_paused: true, paused_reason: `Circuit breaker: ${reason}` })
+      .eq('user_id', user_id)
+      .select('user_id');
+
+    if (haltError || !pausedRows || pausedRows.length === 0) {
+      // If we cannot persist the halt, surface the error rather than falsely claiming success.
+      console.error('CRITICAL: Failed to persist circuit-breaker halt to bot_config:', haltError);
+      throw new Error(`Circuit breaker halt failed to persist: ${haltError?.message ?? 'no bot_config row updated'}. Trading may still be active.`);
+    }
+    actions_taken.push('halt_trading');
+
+    // 3. Record the halt in risk_cooldowns for scheduler-driven auto-resume
+    const cooldownMs = 60 * 60 * 1000; // 1 hour default
+    const resumeAt = new Date(Date.now() + cooldownMs).toISOString();
+    const { error: cooldownError } = await supabaseService
+      .from('risk_cooldowns')
+      .upsert({
+        user_id,
+        reason: 'CIRCUIT_BREAKER',
+        engaged_at: new Date().toISOString(),
+        resume_at: resumeAt,
+        details: { triggered_by: 'risk-management-engine', reason },
+        resolved: false,
+      }, { onConflict: 'user_id,reason' });
+    if (cooldownError) {
+      // Pause is already committed. Throw so the caller knows no cooldown was recorded
+      // and the scheduler will not auto-resume — operator intervention required.
+      console.error('Failed to write risk_cooldowns row:', cooldownError);
+      throw new Error(`Circuit-breaker cooldown failed to persist: ${cooldownError.message}`);
+    }
+    actions_taken.push('cooldown_scheduled');
+
+    console.log(`Circuit breaker triggered for user ${user_id}: ${reason}. Bot paused until ${resumeAt}.`);
+
+    return {
+      success: true,
+      message: 'Circuit breaker activated and trading halted',
+      resume_at: resumeAt,
+      actions_taken,
+    };
   }
 }
 
@@ -401,8 +450,45 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  // SECURITY FIX (Additional Finding): This function previously had NO authentication.
+  // Any unauthenticated caller could trigger circuit breakers for any user_id.
+  // JWT verification is now required for all actions.
+  const authHeader = req.headers.get('authorization');
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), {
+      status: 401,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+  }
+  const token = authHeader.replace('Bearer ', '');
+  const supabaseAuth = createClient(
+    Deno.env.get('SUPABASE_URL') ?? '',
+    Deno.env.get('SUPABASE_ANON_KEY') ?? ''
+  );
+  const { data: { user }, error: authError } = await supabaseAuth.auth.getUser(token);
+  if (authError || !user) {
+    return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), {
+      status: 401,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+  }
+
+  // Rate limit by verified user_id
+  const rateLimitResponse = await applyRateLimit(req, rateLimitConfigs.api, user.id);
+  if (rateLimitResponse) return rateLimitResponse;
+
   try {
     const { action, ...params } = await req.json();
+
+    // Always use the authenticated user_id — never trust user_id from the request body
+    if (params.user_id && params.user_id !== user.id) {
+      return new Response(JSON.stringify({ success: false, error: 'Access denied' }), {
+        status: 403,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+    params.user_id = user.id;
+
     const riskEngine = new RiskManagementEngine();
 
     switch (action) {

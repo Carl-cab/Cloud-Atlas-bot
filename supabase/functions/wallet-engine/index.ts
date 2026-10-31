@@ -204,32 +204,24 @@ async function recordTransaction(
   description?: string,
   metadata: Record<string, unknown> = {}
 ) {
-  // 1. Insert immutable transaction record
-  const { error: txError } = await supabaseAdmin
-    .from('transactions')
-    .insert({
-      user_id:          userId,
-      wallet_id:        walletId,
-      transaction_type: type,
-      amount,
-      currency:         'USD',
-      balance_before:   balanceBefore,
-      balance_after:    balanceAfter,
-      reference_id:     referenceId ?? null,
-      reference_type:   referenceType ?? null,
-      description:      description ?? null,
-      metadata,
-    });
+  // WP-2B: Single atomic RPC — INSERT transactions + UPDATE user_wallets in one PG transaction.
+  // Previously these were two separate awaits; a failure after the INSERT left an orphaned
+  // transaction record with no corresponding wallet update.
+  const { error } = await supabaseAdmin.rpc('record_wallet_transaction', {
+    p_user_id:        userId,
+    p_wallet_id:      walletId,
+    p_type:           type,
+    p_amount:         amount,
+    p_wallet_update:  walletUpdate,
+    p_balance_before: balanceBefore,
+    p_balance_after:  balanceAfter,
+    p_reference_id:   referenceId ?? null,
+    p_reference_type: referenceType ?? null,
+    p_description:    description ?? null,
+    p_metadata:       metadata,
+  });
 
-  if (txError) throw new Error(`Failed to record transaction: ${txError.message}`);
-
-  // 2. Update wallet (trigger will recompute available_balance and validate)
-  const { error: walletError } = await supabaseAdmin
-    .from('user_wallets')
-    .update(walletUpdate)
-    .eq('id', walletId);
-
-  if (walletError) throw new Error(`Failed to update wallet: ${walletError.message}`);
+  if (error) throw new Error(`Failed to record transaction: ${error.message}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -299,6 +291,13 @@ serve(async (req) => {
         //   description    — human-readable note
         //   skip_verify    — if true, skip Kraken verification (for paper trading / testing only)
         const { amount, kraken_ref_id, reference_id, description, skip_verify = false } = body;
+
+        // skip_verify bypasses exchange confirmation — never permit from user requests
+        if (skip_verify === true) {
+          return new Response(JSON.stringify({ error: 'Deposit verification cannot be skipped' }), {
+            status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
 
         if (!amount || typeof amount !== 'number' || amount <= 0) {
           return new Response(JSON.stringify({ error: 'Invalid deposit amount' }), {
@@ -588,6 +587,22 @@ serve(async (req) => {
         if (!amount || amount <= 0 || !position_id) {
           return new Response(JSON.stringify({ error: 'amount and position_id are required' }), {
             status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        // WP-2A: Verify the position exists and belongs to this user before applying any
+        // balance changes. Without this check a caller could supply a foreign position_id
+        // or a non-existent one to record arbitrary P&L against this account.
+        const { data: position, error: posErr } = await supabaseAdmin
+          .from('trading_positions')
+          .select('id, user_id, status')
+          .eq('id', position_id)
+          .eq('user_id', userId)
+          .maybeSingle();
+
+        if (posErr || !position) {
+          return new Response(JSON.stringify({ error: 'Position not found or does not belong to this account' }), {
+            status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
 
